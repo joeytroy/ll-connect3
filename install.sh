@@ -117,6 +117,15 @@ install_debian_dependencies() {
 install_rhel_dependencies() {
     print_info "Installing dependencies for RHEL-based system..."
     
+    # Check if running on immutable system (Bazzite OS)
+    if command -v rpm-ostree &> /dev/null; then
+        print_error "Detected immutable system (rpm-ostree)."
+        print_info "Bazzite OS and other immutable systems require a different installer."
+        print_info "Please use the Bazzite-specific installer instead:"
+        print_info "  ./install-bazzite.sh"
+        exit 1
+    fi
+    
     # Determine package manager (dnf or yum)
     if command -v dnf &> /dev/null; then
         PKG_MGR="dnf"
