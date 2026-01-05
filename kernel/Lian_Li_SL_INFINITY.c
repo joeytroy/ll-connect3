@@ -72,7 +72,7 @@ static int sli_set_fan_speed(struct sli_port *p, u8 speed_percent)
 	/* hid_hw_raw_request returns number of bytes transferred on success (7), not 0 */
 	if (rc >= 0) {
 		p->fan_speed = speed_percent;
-		pr_debug("SLI: Port %d set to %d%%\n", port_num, speed_percent);
+		pr_info("SLI: Port %d set to %d%%\n", port_num, speed_percent);
 		return 0;  /* Return 0 for success */
 	} else {
 		pr_err("SLI: Failed to set port %d speed: error %d\n", port_num, rc);

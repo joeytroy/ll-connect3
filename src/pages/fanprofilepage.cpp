@@ -1080,7 +1080,7 @@ void FanProfilePage::controlFanSpeeds()
         if (std::abs(gated - rpm_out[port]) >= writeThresh || rpm_out[port] == 0) {
             shouldWrite = true;
         }
-        
+
         if (shouldWrite) {
             setFanSpeed(port, gated);
             rpm_out[port] = gated;
@@ -1093,7 +1093,11 @@ void FanProfilePage::controlFanSpeeds()
 
 void FanProfilePage::setFanSpeed(int port, int targetRPM)
 {
-    // Clamp speed to valid range (0-2100 RPM)
+    // Clamp speed to valid range
+    // Minimum 840 RPM to prevent fan shutdown (allow 120 RPM for idle)
+    if (targetRPM > 120 && targetRPM < 840) {
+        targetRPM = 840; // Enforce minimum operating speed
+    }
     targetRPM = qBound(0, targetRPM, 2100);
     
     // Convert RPM to percentage for kernel driver
