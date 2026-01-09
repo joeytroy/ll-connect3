@@ -67,7 +67,6 @@ private:
     int m_draggedPoint;
     int m_hoveredPoint; // Track which point is being hovered over
     
-    
     // Graph state
     bool m_graphEnabled;
     

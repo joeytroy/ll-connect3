@@ -446,12 +446,9 @@ void FanCurveWidget::mouseMoveEvent(QMouseEvent *event)
         // Clamp temperature to valid range
         dataPoint.setX(qMax(m_tempMin, qMin(m_tempMax, dataPoint.x())));
         
-        // Clamp RPM with special handling:
-        // - First point (0°C idle): can be as low as 120 RPM
-        // - All other points: minimum 840 RPM to prevent fan shutdown
+        // Clamp RPM with special handling
         double minRPM = (m_draggedPoint == 0);
         double rpm = qMax(minRPM, qMin((double)m_rpmMax, dataPoint.y()));
-        
         // Snap RPM to nearest 10 RPM increment
         rpm = std::round(rpm / 10.0) * 10.0;
         dataPoint.setY(rpm);
