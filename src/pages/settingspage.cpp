@@ -11,6 +11,7 @@ SettingsPage::SettingsPage(QWidget *parent)
     , m_lightingPage(nullptr)
 {
     setupUI();
+    setupBehaviorSettings();
     setupFanConfiguration();
     setupDebugSettings();
     loadFanConfiguration();
@@ -96,6 +97,36 @@ void SettingsPage::setupUI()
     )");
 }
 
+void SettingsPage::setupBehaviorSettings()
+{
+    m_behaviorGroup = new QGroupBox("Startup & Display");
+    m_behaviorGroup->setObjectName("settingsGroup");
+
+    QVBoxLayout *behaviorLayout = new QVBoxLayout(m_behaviorGroup);
+    behaviorLayout->setSpacing(12);
+
+    QLabel *descLabel = new QLabel("Control how LL-Connect 3 starts:");
+    descLabel->setObjectName("settingsLabel");
+    descLabel->setWordWrap(true);
+    behaviorLayout->addWidget(descLabel);
+
+    QSettings settings("LianLi", "LConnect3");
+    bool minimizeOnStartup = settings.value("Startup/MinimizeOnStartup", false).toBool();
+
+    m_minimizeOnStartupCheck = new QCheckBox("Minimize window on startup");
+    m_minimizeOnStartupCheck->setObjectName("settingsCheck");
+    m_minimizeOnStartupCheck->setChecked(minimizeOnStartup);
+    connect(m_minimizeOnStartupCheck, &QCheckBox::toggled, this, [this](bool checked) {
+        QSettings settings("LianLi", "LConnect3");
+        settings.setValue("Startup/MinimizeOnStartup", checked);
+        settings.sync();
+        emit minimizeOnStartupChanged(checked);
+    });
+    behaviorLayout->addWidget(m_minimizeOnStartupCheck);
+
+    m_leftLayout->addWidget(m_behaviorGroup);
+}
+
 void SettingsPage::onResetAll()
 {
     // Show confirmation dialog with information about what will be reset
@@ -171,6 +202,7 @@ void SettingsPage::onResetAll()
     m_debugModeCheck->setChecked(false);
     m_debugFanSpeedsCheck->setChecked(false);
     m_debugFanLightsCheck->setChecked(false);
+    m_kernelLoggingCheck->setChecked(false);
     
     // Reset fan configuration to all enabled
     m_fanPort1Check->setChecked(true);
@@ -339,6 +371,20 @@ void SettingsPage::saveFanConfiguration()
     settings.sync();
 }
 
+void SettingsPage::writeKernelLoggingFlag(bool enabled)
+{
+    QString procPath = "/proc/Lian_li_SL_INFINITY/logging_enabled";
+    QFile file(procPath);
+
+    if (file.open(QIODevice::WriteOnly)) {
+        QTextStream stream(&file);
+        stream << (enabled ? "1" : "0");
+        file.close();
+    } else {
+        qWarning() << "Failed to set kernel logging state:" << file.errorString();
+    }
+}
+
 void SettingsPage::setupDebugSettings()
 {
     m_debugGroup = new QGroupBox("Developer Settings");
@@ -358,6 +404,7 @@ void SettingsPage::setupDebugSettings()
     bool debugEnabled = settings.value("Debug/Enabled", false).toBool();
     bool debugFanSpeeds = settings.value("Debug/FanSpeeds", false).toBool();
     bool debugFanLights = settings.value("Debug/FanLights", false).toBool();
+    bool kernelLogs = settings.value("Debug/KernelLogs", false).toBool();
     
     // Debug mode checkbox (master control)
     m_debugModeCheck = new QCheckBox("Enable Debug Mode");
@@ -409,13 +456,41 @@ void SettingsPage::setupDebugSettings()
     connect(m_debugModeCheck, &QCheckBox::toggled, m_debugFanLightsCheck, &QCheckBox::setEnabled);
     
     debugLayout->addWidget(m_debugFanLightsCheck);
+
+    // Kernel driver logging
+    m_kernelLoggingCheck = new QCheckBox("Enable Kernel Driver Logging");
+    m_kernelLoggingCheck->setObjectName("settingsCheck");
+    m_kernelLoggingCheck->setChecked(kernelLogs);
+    m_kernelLoggingCheck->setEnabled(debugEnabled);
+    
+    connect(m_kernelLoggingCheck, &QCheckBox::toggled, [this](bool checked) {
+        QSettings settings("LianLi", "LConnect3");
+        settings.setValue("Debug/KernelLogs", checked);
+        settings.sync();
+        writeKernelLoggingFlag(checked);
+    });
+    
+    connect(m_debugModeCheck, &QCheckBox::toggled, this, [this](bool checked) {
+        m_kernelLoggingCheck->setEnabled(checked);
+        if (checked && m_kernelLoggingCheck->isChecked()) {
+            writeKernelLoggingFlag(true);
+        }
+        if (!checked && m_kernelLoggingCheck->isChecked()) {
+            m_kernelLoggingCheck->setChecked(false);
+        }
+    });
+    
+    debugLayout->addWidget(m_kernelLoggingCheck);
     
     // Info label
-    QLabel *infoLabel = new QLabel("When enabled, detailed diagnostic information will be printed to the console. You can enable specific debug categories below. Requires application restart to take full effect.");
+    QLabel *infoLabel = new QLabel("When enabled, detailed diagnostic information will be printed to the console. You can enable specific debug categories below. Kernel driver logging writes to dmesg and is off by default.");
     infoLabel->setObjectName("infoLabel");
     infoLabel->setWordWrap(true);
     infoLabel->setStyleSheet("color: #888888; font-size: 11px; font-style: italic;");
     debugLayout->addWidget(infoLabel);
     
     m_leftLayout->addWidget(m_debugGroup);
+
+    // Push the persisted kernel logging preference down to the driver on startup
+    writeKernelLoggingFlag(kernelLogs && debugEnabled);
 }

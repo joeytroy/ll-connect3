@@ -57,8 +57,13 @@ void MonitoringCard::setupUI()
     }
 
     m_layout = new QVBoxLayout(this);
-    m_layout->setContentsMargins(12, 10, 12, 12);
-    m_layout->setSpacing(8);
+    if (m_type == CircularProgress) {
+        m_layout->setContentsMargins(0, 0, 0, 0);
+        m_layout->setSpacing(0);
+    } else {
+        m_layout->setContentsMargins(12, 10, 12, 12);
+        m_layout->setSpacing(8);
+    }
 
     // Header with icon and title
     m_headerLayout = new QHBoxLayout();
@@ -324,6 +329,21 @@ void MonitoringCard::setColor(const QColor &color)
 void MonitoringCard::setIcon(const QString &iconText)
 {
     m_iconLabel->setText(iconText);
+}
+
+void MonitoringCard::setCircularSize(int widgetSize, int canvasSize)
+{
+    if (m_type != CircularProgress || !m_progressCanvas) {
+        return;
+    }
+
+    setFixedSize(widgetSize, widgetSize);
+    m_progressCanvas->setFixedSize(canvasSize, canvasSize);
+    int margin = qMax(0, (widgetSize - canvasSize) / 2);
+    m_layout->setContentsMargins(margin, margin, margin, margin);
+    m_layout->setSpacing(0);
+    updateGeometry();
+    update();
 }
 
 void MonitoringCard::setProgressValue(qreal value)

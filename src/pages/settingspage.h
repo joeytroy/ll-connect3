@@ -23,12 +23,16 @@ public:
     explicit SettingsPage(QWidget *parent = nullptr);
     void setLightingPage(LightingPage *lightingPage);
 
+signals:
+    void minimizeOnStartupChanged(bool enabled);
+
 private slots:
     void onResetAll();
     void onFanPortToggled(int port, bool enabled);
 
 private:
     void setupUI();
+    void setupBehaviorSettings();
     void setupFanConfiguration();
     void setupDebugSettings();
     void loadFanConfiguration();
@@ -42,6 +46,10 @@ private:
     
     // Header
     QLabel *m_titleLabel;
+
+    // Behavior settings
+    QGroupBox *m_behaviorGroup;
+    QCheckBox *m_minimizeOnStartupCheck;
     
     // Fan configuration
     QGroupBox *m_fanConfigGroup;
@@ -55,12 +63,15 @@ private:
     QCheckBox *m_debugModeCheck;
     QCheckBox *m_debugFanSpeedsCheck;
     QCheckBox *m_debugFanLightsCheck;
+    QCheckBox *m_kernelLoggingCheck;
     
     // Action buttons
     QPushButton *m_resetAllBtn;
     
     // Reference to lighting page for reset
     LightingPage *m_lightingPage;
+
+    void writeKernelLoggingFlag(bool enabled);
 };
 
 #endif // SETTINGSPAGE_H

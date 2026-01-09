@@ -9,6 +9,7 @@ Complete Linux support for the Lian Li SL‑Infinity hub: a kernel fan driver an
 | **Debian-based** | Ubuntu, Kubuntu 24.04 LTS, Linux Mint, Pop!_OS |
 | **RHEL-based** | Fedora 43, CentOS, Rocky Linux, AlmaLinux |
 | **Arch-based** | Arch Linux, Manjaro, EndeavourOS |
+| **Immutable (rpm-ostree)** | Bazzite OS |
 
 ## Support This Project
 
@@ -42,6 +43,15 @@ cd ll-connect3
 ```
 
 The installer will present a menu to select your distribution type (Debian, RHEL, or Arch-based).
+
+**For Bazzite OS (immutable system):**
+```bash
+git clone https://github.com/joeytroy/ll-connect3.git
+cd ll-connect3
+./install-bazzite.sh
+```
+
+The Bazzite installer uses `rpm-ostree` to layer packages and will prompt you to reboot after installing dependencies.
 
 After install:
 - Run the app: `LLConnect3`
@@ -235,6 +245,28 @@ If you see an error like "Kernel build directory not found", it means your kerne
 1. Run a full system update (see commands above)
 2. Reboot into the new kernel
 3. Run the installer again
+
+### Bazzite OS / Immutable Systems
+
+**Using the correct installer:**
+- Use `./install-bazzite.sh` for Bazzite OS and other rpm-ostree-based systems
+- The regular `./install.sh` will detect immutable systems and prompt you to use the Bazzite installer
+
+**After system updates:**
+- When Bazzite updates the kernel via rpm-ostree, you'll need to rebuild the kernel module:
+  ```bash
+  cd ll-connect3/kernel
+  make clean
+  make
+  sudo make install
+  sudo modprobe -r Lian_Li_SL_INFINITY
+  sudo modprobe Lian_Li_SL_INFINITY
+  ```
+
+**Package layering:**
+- Dependencies are installed using `rpm-ostree install` which requires a reboot
+- The installer will prompt you to reboot after layering packages
+- After rebooting, run the installer again to continue with the installation
 
 ## Protocol Documentation
 

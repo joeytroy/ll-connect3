@@ -30,6 +30,7 @@ public:
     void setProgress(int percentage);
     void setColor(const QColor &color);
     void setIcon(const QString &iconText);
+    void setCircularSize(int widgetSize, int canvasSize);
 
     qreal progressValue() const { return m_progressValue; }
     void setProgressValue(qreal value);

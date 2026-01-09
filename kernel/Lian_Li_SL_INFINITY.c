@@ -36,6 +36,16 @@ struct sli_hub {
 };
 
 static struct sli_hub *g_hub = NULL;
+static bool g_log_enabled;
+
+module_param_named(log_enabled, g_log_enabled, bool, 0644);
+MODULE_PARM_DESC(log_enabled, "Enable informational logging for SLI driver");
+
+#define SLI_LOG(fmt, ...)                           \
+	do {                                            \
+		if (g_log_enabled)                          \
+			pr_info("SLI: " fmt, ##__VA_ARGS__);    \
+	} while (0)
 
 /* Send HID command for fan control */
 static int sli_send_segment(struct hid_device *hdev, const u8 *buf, size_t len)
@@ -72,7 +82,7 @@ static int sli_set_fan_speed(struct sli_port *p, u8 speed_percent)
 	/* hid_hw_raw_request returns number of bytes transferred on success (7), not 0 */
 	if (rc >= 0) {
 		p->fan_speed = speed_percent;
-		pr_info("SLI: Port %d set to %d%%\n", port_num, speed_percent);
+		SLI_LOG("Port %d set to %d%%\n", port_num, speed_percent);
 		return 0;  /* Return 0 for success */
 	} else {
 		pr_err("SLI: Failed to set port %d speed: error %d\n", port_num, rc);
@@ -181,8 +191,8 @@ static ssize_t sli_write_fan_config(struct file *file, const char __user *ubuf,
 	/* Set fan configuration */
 	p->fan_connected = (connected != 0);
 
-	pr_info("SLI: Port %d fan configuration set to %s\n", 
-	        p->index + 1, p->fan_connected ? "connected" : "disconnected");
+	SLI_LOG("Port %d fan configuration set to %s\n",
+		p->index + 1, p->fan_connected ? "connected" : "disconnected");
 
 	return count;
 }
@@ -214,6 +224,53 @@ static const struct proc_ops sli_fan_config_ops = {
 	.proc_write = sli_write_fan_config,
 };
 
+/* Read handler for logging flag */
+static ssize_t sli_read_logging_enabled(struct file *file, char __user *ubuf,
+										size_t count, loff_t *ppos)
+{
+	char buf[16];
+	int len;
+
+	if (*ppos > 0)
+		return 0;
+
+	len = snprintf(buf, sizeof(buf), "%d\n", g_log_enabled ? 1 : 0);
+	if (len > count)
+		len = count;
+
+	if (copy_to_user(ubuf, buf, len))
+		return -EFAULT;
+
+	*ppos += len;
+	return len;
+}
+
+/* Write handler for logging flag */
+static ssize_t sli_write_logging_enabled(struct file *file, const char __user *ubuf,
+										 size_t count, loff_t *ppos)
+{
+	char buf[16];
+	int enabled;
+
+	if (count >= sizeof(buf))
+		return -EINVAL;
+	if (copy_from_user(buf, ubuf, count))
+		return -EFAULT;
+	buf[count] = '\0';
+
+	if (kstrtoint(buf, 10, &enabled) < 0)
+		return -EINVAL;
+
+	g_log_enabled = (enabled != 0);
+
+	return count;
+}
+
+static const struct proc_ops sli_logging_enabled_ops = {
+	.proc_read = sli_read_logging_enabled,
+	.proc_write = sli_write_logging_enabled,
+};
+
 /* Probe function */
 static int sli_probe(struct hid_device *hdev, const struct hid_device_id *id)
 {
@@ -221,7 +278,7 @@ static int sli_probe(struct hid_device *hdev, const struct hid_device_id *id)
 	int rc;
 	int i;
 
-	pr_info("SLI: Probing device\n");
+	SLI_LOG("Probing device\n");
 
 	rc = hid_parse(hdev);
 	if (rc) {
@@ -270,6 +327,9 @@ static int sli_probe(struct hid_device *hdev, const struct hid_device_id *id)
 		return -ENOMEM;
 	}
 
+	/* Global logging control */
+	proc_create("logging_enabled", 0666, hub->procdir, &sli_logging_enabled_ops);
+
 	/* Create proc files for each port */
 	for (i = 0; i < 4; i++) {
 		char port_name[16];
@@ -294,7 +354,7 @@ static int sli_probe(struct hid_device *hdev, const struct hid_device_id *id)
 	}
 
 	g_hub = hub;
-	pr_info("SLI: HID device initialized\n");
+	SLI_LOG("HID device initialized\n");
 
 	return 0;
 }
@@ -304,7 +364,7 @@ static void sli_remove(struct hid_device *hdev)
 {
 	struct sli_hub *hub = hid_get_drvdata(hdev);
 
-	pr_info("SLI: Removing device\n");
+	SLI_LOG("Removing device\n");
 
 	if (hub) {
 		if (hub->procdir) {
@@ -317,7 +377,7 @@ static void sli_remove(struct hid_device *hdev)
 	hid_hw_close(hdev);
 	hid_hw_stop(hdev);
 	
-	pr_info("SLI: HID device removed\n");
+	SLI_LOG("HID device removed\n");
 }
 
 static const struct hid_device_id sli_devices[] = {

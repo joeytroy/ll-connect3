@@ -106,7 +106,17 @@ int main(int argc, char *argv[])
     
     // Create and show main window
     MainWindow window;
-    window.show();
+    bool minimizeOnStartup = false;
+    {
+        QSettings settings("LianLi", "LConnect3");
+        minimizeOnStartup = settings.value("Startup/MinimizeOnStartup", false).toBool();
+    }
+
+    if (minimizeOnStartup) {
+        window.showMinimized();
+    } else {
+        window.show();
+    }
     
     return app.exec();
 }

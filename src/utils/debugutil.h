@@ -25,7 +25,11 @@ bool isDebugCategoryEnabled(const char* category);
 template<typename... Args>
 inline void debugPrintf(const char* format, Args... args) {
     if (isDebugEnabled()) {
-        printf(format, args...);
+        if constexpr (sizeof...(args) > 0) {
+            std::printf(format, args...);
+        } else {
+            std::fputs(format, stdout);
+        }
     }
 }
 
@@ -44,4 +48,3 @@ inline void debugPrintfCategory(const char* category, const char* format, ...) {
 // Convenience macros
 #define DEBUG_PRINTF(...) DebugUtil::debugPrintf(__VA_ARGS__)
 #define DEBUG_PRINTF_CATEGORY(category, ...) DebugUtil::debugPrintfCategory(category, __VA_ARGS__)
-
