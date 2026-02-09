@@ -5,10 +5,10 @@ KERNEL_DIR := /lib/modules/$(KERNEL_VERSION)/build
 MODULE_DIR := /lib/modules/$(KERNEL_VERSION)/extra
 
 all:
-	make -C $(KERNEL_DIR) M=$(PWD) modules
+	make LLVM=1 -C $(KERNEL_DIR) M=$(PWD) modules
 
 clean:
-	make -C $(KERNEL_DIR) M=$(PWD) clean
+	make LLVM=1 -C $(KERNEL_DIR) M=$(PWD) clean
 
 install: all
 	sudo mkdir -p $(MODULE_DIR)
