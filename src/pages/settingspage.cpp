@@ -124,6 +124,23 @@ void SettingsPage::setupBehaviorSettings()
     });
     behaviorLayout->addWidget(m_minimizeOnStartupCheck);
 
+    QLabel *tempUnitLabel = new QLabel("Fan temperature unit:");
+    tempUnitLabel->setObjectName("settingsLabel");
+    behaviorLayout->addWidget(tempUnitLabel);
+
+    m_fanTempUnitCombo = new QComboBox();
+    m_fanTempUnitCombo->addItem("°C (Celsius)");
+    m_fanTempUnitCombo->addItem("°F (Fahrenheit)");
+    m_fanTempUnitCombo->setObjectName("settingsCheck");
+    QString savedUnit = settings.value("FanTemperatureUnit", "C").toString();
+    m_fanTempUnitCombo->setCurrentIndex(savedUnit == "F" ? 1 : 0);
+    connect(m_fanTempUnitCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int index) {
+        QSettings s("LianLi", "LConnect3");
+        s.setValue("FanTemperatureUnit", index == 1 ? "F" : "C");
+        s.sync();
+    });
+    behaviorLayout->addWidget(m_fanTempUnitCombo);
+
     m_leftLayout->addWidget(m_behaviorGroup);
 }
 
@@ -136,6 +153,7 @@ void SettingsPage::onResetAll()
     msgBox.setInformativeText(
         "This will reset ALL application settings to their default values:\n\n"
         "• Fan Port Configuration (all ports enabled)\n"
+        "• Fan temperature unit (Celsius)\n"
         "• Debug Mode (disabled)\n"
         "• Lighting Effects (Rainbow Wave)\n"
         "• Lighting Colors (Red, Blue, Green, Yellow per port)\n"
@@ -209,6 +227,11 @@ void SettingsPage::onResetAll()
     m_fanPort2Check->setChecked(true);
     m_fanPort3Check->setChecked(true);
     m_fanPort4Check->setChecked(true);
+
+    // Reset fan temperature unit to Celsius
+    if (m_fanTempUnitCombo) {
+        m_fanTempUnitCombo->setCurrentIndex(0);
+    }
     
     // Save the reset values
     saveFanConfiguration();

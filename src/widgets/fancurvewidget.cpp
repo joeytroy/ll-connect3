@@ -23,6 +23,7 @@ FanCurveWidget::FanCurveWidget(QWidget *parent)
     , m_dragging(false)
     , m_draggedPoint(-1)
     , m_graphEnabled(true)
+    , m_useFahrenheit(false)
     , m_backgroundColor(QColor(26, 26, 26))
     , m_gridColor(QColor(60, 60, 60))
     , m_axisColor(QColor(200, 200, 200))
@@ -40,6 +41,14 @@ void FanCurveWidget::setFanSize(int maxRPM)
     m_displayRpmMax = maxRPM;
     // Keep m_rpmMax at 2100 so curves don't move
     update();
+}
+
+void FanCurveWidget::setUseFahrenheit(bool useF)
+{
+    if (m_useFahrenheit != useF) {
+        m_useFahrenheit = useF;
+        update();
+    }
 }
 
 void FanCurveWidget::setProfile(const QString &profile)
@@ -223,10 +232,13 @@ void FanCurveWidget::drawAxes(QPainter &painter)
     font.setPointSize(9);
     painter.setFont(font);
     
-    // X-axis labels (Temperature)
+    // X-axis labels (Temperature) — show °C or °F per user setting
     for (int temp = 0; temp <= 100; temp += 10) {
         int x = graphRect.left() + (temp - m_tempMin) / (m_tempMax - m_tempMin) * graphRect.width();
-        painter.drawText(x - 15, graphRect.bottom() + 15, 30, 15, Qt::AlignCenter, QString::number(temp) + "°C");
+        QString label = m_useFahrenheit
+            ? (QString::number(32 + temp * 9 / 5) + "°F")
+            : (QString::number(temp) + "°C");
+        painter.drawText(x - 18, graphRect.bottom() + 15, 36, 15, Qt::AlignCenter, label);
     }
     
     // Y-axis labels (RPM) - adjust labels based on fan size, but position stays the same

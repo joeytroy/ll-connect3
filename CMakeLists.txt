@@ -1,5 +1,13 @@
 cmake_minimum_required(VERSION 3.16)
-project(LLConnect3 VERSION 1.0.0 LANGUAGES CXX)
+
+# Read version from VERSION.md (single line, e.g. 1.0.0)
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/VERSION.md" VERSION_FILE)
+string(STRIP "${VERSION_FILE}" VERSION_FROM_FILE)
+if(NOT VERSION_FROM_FILE)
+  set(VERSION_FROM_FILE "0.0.0")
+endif()
+
+project(LLConnect3 VERSION ${VERSION_FROM_FILE} LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -83,11 +91,22 @@ set(HEADERS
     src/widgets/fanlightingwidget.h
 )
 
-# Create executable
-add_executable(LLConnect3 ${SOURCES} ${HEADERS} ${RESOURCES})
+# Generate version.h at build time from VERSION.md (so changing VERSION.md + make updates the app)
+add_custom_command(OUTPUT ${CMAKE_BINARY_DIR}/version.h
+  COMMAND ${CMAKE_COMMAND}
+    -DPROJECT_SOURCE_DIR=${CMAKE_SOURCE_DIR}
+    -DPROJECT_BINARY_DIR=${CMAKE_BINARY_DIR}
+    -P ${CMAKE_SOURCE_DIR}/cmake/WriteVersionHeader.cmake
+  DEPENDS ${CMAKE_SOURCE_DIR}/VERSION.md
+  COMMENT "Generating version.h from VERSION.md")
 
-# Include directories
-target_include_directories(LLConnect3 PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+# Create executable
+add_executable(LLConnect3 ${SOURCES} ${HEADERS} ${RESOURCES} ${CMAKE_BINARY_DIR}/version.h)
+
+# Include directories (src + build dir for generated version.h)
+target_include_directories(LLConnect3 PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/src
+  ${CMAKE_BINARY_DIR})
 
 # Link Qt6 libraries
 target_link_libraries(LLConnect3

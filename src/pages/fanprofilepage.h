@@ -34,6 +34,10 @@ private slots:
     void onPortSelectionChanged();
     void onFanSizeChanged(int port);
     void onRenameCustomProfile(int profileNum);
+    void onSensorSourceChanged(int index);
+    void onTargetTemperatureChanged(int value);
+    void onTargetRPMChanged(int value);
+    void onPortNameEdited(QTableWidgetItem *item);
 
 private:
     void setupUI();
@@ -50,6 +54,7 @@ private:
     int getRealCPUTemperature();
     int getRealCPULoad();
     int getRealGPULoad();
+    int getRealGPUTemperature();
     QVector<int> getRealFanRPMs();
     int getRealFanRPM(int port);
     int convertPercentageToRPM(int percentage);
@@ -64,10 +69,15 @@ private:
     void loadCustomProfiles();
     void savePortProfiles();
     void loadPortProfiles();
+    void savePortTargets();
+    void loadPortTargets();
+    void savePortNames();
+    void loadPortNames();
     QVector<QPointF> getDefaultCurveForProfile(const QString &profile);
     int calculateRPMForCustomCurve(int port, int temperature);
     QString getCurrentProfile();
     QString getInternalProfileName(const QString &displayName);
+    bool useFahrenheit() const;
     // Fan detection functions removed - configuration is now in Settings
     
     QVBoxLayout *m_mainLayout;
@@ -95,6 +105,11 @@ private:
     QPushButton *m_applyToAllButton;
     QPushButton *m_defaultButton;
     
+    // New control section: sensor source + numeric temp/RPM editor
+    QComboBox *m_sensorSourceCombo;
+    QSpinBox  *m_targetTempSpin;
+    QSpinBox  *m_targetRpmSpin;
+    
     // Current selected port (1-4)
     int m_selectedPort;
     
@@ -103,6 +118,13 @@ private:
     
     // Per-port profile names (port 1-4 -> profile name like "Quiet", "StdSP", etc.)
     QMap<int, QString> m_portProfiles;
+    
+    // Per-port target temperature/RPM (for numeric editor)
+    QMap<int, int> m_portTargetTemp;
+    QMap<int, int> m_portTargetRpm;
+
+    // Per-port custom display names (e.g. "CPU Rad", "GPU Rad")
+    QMap<int, QString> m_portNames;
     
     // Custom profile names and base curves
     QMap<int, QString> m_customProfileNames; // Profile 1-3 -> custom name

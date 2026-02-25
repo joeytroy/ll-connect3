@@ -21,6 +21,7 @@
 #include <deque>
 #include <QElapsedTimer>
 #include <QInputDialog>
+#include <QSignalBlocker>
 
 FanProfilePage::FanProfilePage(QWidget *parent)
     : QWidget(parent)
@@ -46,6 +47,9 @@ FanProfilePage::FanProfilePage(QWidget *parent)
         // Initialize with Quiet profile curve
         m_customProfileCurves[i] = getDefaultCurveForProfile("Quiet");
     }
+    
+    // Load saved port names before building the table
+    loadPortNames();
     
     // Set minimum size for the page - more compact
     setMinimumSize(700, 500);
@@ -84,10 +88,22 @@ FanProfilePage::FanProfilePage(QWidget *parent)
     
     // Fan configuration is now handled via Settings page
     
-    // Load saved custom curves and profiles
+    // Load saved custom curves, profiles, and per-port targets
     loadCustomCurves();
     loadCustomProfiles();
     loadPortProfiles(); // Load saved port profile assignments
+    loadPortTargets();  // Load numeric temp/RPM targets per port
+    
+    // Restore control source (CPU / GPU)
+    {
+        QSettings fanControlSettings("LConnect3", "FanControl");
+        QString source = fanControlSettings.value("ControlSource", "CPU").toString();
+        if (source == "GPU") {
+            if (m_sensorSourceCombo) {
+                m_sensorSourceCombo->setCurrentIndex(1);
+            }
+        }
+    }
     
     // Load the last selected profile
     QSettings settings("LConnect3", "FanProfile");
@@ -119,6 +135,9 @@ FanProfilePage::FanProfilePage(QWidget *parent)
     
     // Connect table selection to update which port's curve is shown
     connect(m_fanTable, &QTableWidget::itemSelectionChanged, this, &FanProfilePage::onPortSelectionChanged);
+    
+    // Default to first port selected so numeric editor is initialized
+    m_fanTable->selectRow(0);
     
     // Initial update
     updateTemperature();
@@ -189,9 +208,12 @@ void FanProfilePage::setupFanTable()
         rowItem->setFlags(rowItem->flags() & ~Qt::ItemIsEditable); // Make read-only
         m_fanTable->setItem(row, 0, rowItem);
         
-        // Port number
-        QTableWidgetItem *portItem = new QTableWidgetItem("Port " + QString::number(row + 1));
-        portItem->setFlags(portItem->flags() & ~Qt::ItemIsEditable); // Make read-only
+        // Port name (editable by user; default "Port 1" etc.)
+        int port = row + 1;
+        QString displayName = m_portNames.value(port, "Port " + QString::number(port));
+        QTableWidgetItem *portItem = new QTableWidgetItem(displayName);
+        portItem->setFlags(portItem->flags() | Qt::ItemIsEditable);
+        portItem->setToolTip("Double-click to rename this port");
         m_fanTable->setItem(row, 1, portItem);
         
         // Profile (will be updated based on selection)
@@ -247,11 +269,12 @@ void FanProfilePage::setupFanTable()
         m_fanTable->setCellWidget(row, 5, sizeCombo);
         
         // Connect fan size change signal
-        int port = row + 1; // Capture the port number (1-4)
         connect(sizeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this, port]() {
             onFanSizeChanged(port);
         });
     }
+    
+    connect(m_fanTable, &QTableWidget::itemChanged, this, &FanProfilePage::onPortNameEdited);
     
     m_leftLayout->addWidget(m_fanTable);
     
@@ -387,12 +410,70 @@ void FanProfilePage::setupControls()
     
     m_rightLayout->addWidget(m_profileGroup);
     
-    // Create horizontal layout for fan curve and buttons
+    // Create horizontal layout for fan curve, new control bar, and buttons
     QHBoxLayout *fanCurveLayout = new QHBoxLayout();
     fanCurveLayout->setSpacing(15);
     
-    // Fan curve on the left
-    fanCurveLayout->addWidget(m_fanCurveWidget, 1); // Fan curve takes remaining space
+    // Left column: control bar (CPU/GPU + numeric editor) above the fan curve
+    QVBoxLayout *curveColumn = new QVBoxLayout();
+    curveColumn->setSpacing(6);
+    
+    QHBoxLayout *controlBarLayout = new QHBoxLayout();
+    controlBarLayout->setSpacing(10);
+    
+    QLabel *sourceLabel = new QLabel("Control Source");
+    sourceLabel->setObjectName("controlLabel");
+    
+    m_sensorSourceCombo = new QComboBox();
+    m_sensorSourceCombo->addItem("CPU");
+    m_sensorSourceCombo->addItem("GPU");
+    m_sensorSourceCombo->setCurrentIndex(0);
+    m_sensorSourceCombo->setFixedWidth(90);
+    connect(m_sensorSourceCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &FanProfilePage::onSensorSourceChanged);
+    
+    QLabel *tempLabel = new QLabel("Temp");
+    tempLabel->setObjectName("controlLabel");
+    
+    m_targetTempSpin = new QSpinBox();
+    m_targetTempSpin->setRange(0, 100);
+    m_targetTempSpin->setSuffix(" °C");
+    m_targetTempSpin->setFixedWidth(100);
+    m_targetTempSpin->setValue(50);
+    m_targetTempSpin->setReadOnly(false);
+    m_targetTempSpin->setFocusPolicy(Qt::StrongFocus);
+    m_targetTempSpin->setKeyboardTracking(false);
+    connect(m_targetTempSpin, QOverload<int>::of(&QSpinBox::valueChanged),
+            this, &FanProfilePage::onTargetTemperatureChanged);
+    
+    QLabel *rpmLabel = new QLabel("RPM");
+    rpmLabel->setObjectName("controlLabel");
+    
+    m_targetRpmSpin = new QSpinBox();
+    m_targetRpmSpin->setRange(0, 2100);
+    m_targetRpmSpin->setSingleStep(50);
+    m_targetRpmSpin->setFixedWidth(110);
+    m_targetRpmSpin->setValue(1000);
+    m_targetRpmSpin->setReadOnly(false);
+    m_targetRpmSpin->setFocusPolicy(Qt::StrongFocus);
+    m_targetRpmSpin->setKeyboardTracking(false);
+    connect(m_targetRpmSpin, QOverload<int>::of(&QSpinBox::valueChanged),
+            this, &FanProfilePage::onTargetRPMChanged);
+    
+    controlBarLayout->addWidget(sourceLabel);
+    controlBarLayout->addWidget(m_sensorSourceCombo);
+    controlBarLayout->addSpacing(12);
+    controlBarLayout->addWidget(tempLabel);
+    controlBarLayout->addWidget(m_targetTempSpin);
+    controlBarLayout->addSpacing(12);
+    controlBarLayout->addWidget(rpmLabel);
+    controlBarLayout->addWidget(m_targetRpmSpin);
+    controlBarLayout->addStretch();
+    
+    curveColumn->addLayout(controlBarLayout);
+    curveColumn->addWidget(m_fanCurveWidget, 1); // Fan curve takes remaining space
+    
+    fanCurveLayout->addLayout(curveColumn, 1);
     
     // Buttons on the right
     QVBoxLayout *buttonsLayout = new QVBoxLayout();
@@ -504,6 +585,12 @@ QString FanProfilePage::getInternalProfileName(const QString &displayName)
     return displayName; // Quiet, custom profiles, etc. use same name
 }
 
+bool FanProfilePage::useFahrenheit() const
+{
+    QSettings settings("LianLi", "LConnect3");
+    return settings.value("FanTemperatureUnit", "C").toString() == "F";
+}
+
 void FanProfilePage::updateFanCurve()
 {
     // Update fan curve based on selected profile
@@ -525,8 +612,18 @@ void FanProfilePage::updateFanCurve()
 
 void FanProfilePage::updateTemperature()
 {
-    // Try to get real CPU temperature first, fall back to simulation
-    int realTemp = getRealCPUTemperature();
+    // Select control source (CPU or GPU) for temperature, fall back to CPU, then simulation
+    bool useGPU = (m_sensorSourceCombo && m_sensorSourceCombo->currentIndex() == 1);
+    
+    int realTemp = -1;
+    if (useGPU) {
+        realTemp = getRealGPUTemperature();
+        if (realTemp == -1) {
+            realTemp = getRealCPUTemperature();
+        }
+    } else {
+        realTemp = getRealCPUTemperature();
+    }
     
     if (realTemp != -1) {
         // Use real temperature
@@ -607,6 +704,25 @@ void FanProfilePage::updateFanRPMs()
 
 void FanProfilePage::updateFanData()
 {
+    // Keep Temp spinbox range/suffix in sync with Settings (Fan temperature unit)
+    if (m_targetTempSpin) {
+        static QString lastFanTempUnit;
+        QString unit = useFahrenheit() ? "F" : "C";
+        if (unit != lastFanTempUnit) {
+            lastFanTempUnit = unit;
+            QSignalBlocker block(m_targetTempSpin);
+            if (useFahrenheit()) {
+                m_targetTempSpin->setRange(32, 212);
+                m_targetTempSpin->setSuffix(" °F");
+            } else {
+                m_targetTempSpin->setRange(0, 100);
+                m_targetTempSpin->setSuffix(" °C");
+            }
+            int tempC = m_portTargetTemp.value(m_selectedPort, 50);
+            m_targetTempSpin->setValue(useFahrenheit() ? static_cast<int>(std::round(tempC * 9.0 / 5.0 + 32)) : tempC);
+        }
+    }
+
     // Use cached temperature for fast updates
     int currentTemp = m_cachedTemperature;
     
@@ -626,7 +742,8 @@ void FanProfilePage::updateFanData()
         realRPM = activeCount > 0 ? totalRPM / activeCount : 0;
     }
     
-    // Update fan curve widget - show real RPM instead of calculated
+    // Update fan curve widget — show real RPM and respect temperature unit (°C / °F)
+    m_fanCurveWidget->setUseFahrenheit(useFahrenheit());
     m_fanCurveWidget->setCurrentTemperature(currentTemp);
     m_fanCurveWidget->setCurrentRPM(realRPM);
     
@@ -646,8 +763,10 @@ void FanProfilePage::updateFanData()
         profileItem->setFlags(profileItem->flags() & ~Qt::ItemIsEditable); // Make read-only
         m_fanTable->setItem(row, 2, profileItem);
         
-        // Temperature with color coding (show for all ports)
-        QTableWidgetItem *tempItem = new QTableWidgetItem(QString::number(currentTemp) + "°C");
+        // Temperature with color coding (show in user's chosen unit: °C or °F)
+        int displayTemp = useFahrenheit() ? static_cast<int>(std::round(currentTemp * 9.0 / 5.0 + 32)) : currentTemp;
+        QString unitStr = useFahrenheit() ? "°F" : "°C";
+        QTableWidgetItem *tempItem = new QTableWidgetItem(QString::number(displayTemp) + unitStr);
         tempItem->setForeground(getTemperatureColor(currentTemp));
         tempItem->setFlags(tempItem->flags() & ~Qt::ItemIsEditable); // Make read-only
         m_fanTable->setItem(row, 3, tempItem);
@@ -914,6 +1033,57 @@ int FanProfilePage::getRealCPUTemperature()
     
     // Return the temperature or -1 to indicate failure
     return maxTemp > 0 ? maxTemp : -1;
+}
+
+int FanProfilePage::getRealGPUTemperature()
+{
+    // Lightweight GPU temperature reader, similar to System Info page
+    // Method 1: NVIDIA via nvidia-smi
+    QProcess nvidiaProcess;
+    nvidiaProcess.start("nvidia-smi", QStringList()
+                        << "--query-gpu=temperature.gpu"
+                        << "--format=csv,noheader,nounits");
+    nvidiaProcess.waitForFinished(500);
+    if (nvidiaProcess.exitCode() == 0) {
+        QString output = QString::fromUtf8(nvidiaProcess.readAllStandardOutput()).trimmed();
+        QString firstLine = output.section('\n', 0, 0).trimmed();
+        bool ok = false;
+        int temp = firstLine.toInt(&ok);
+        if (ok && temp > 0 && temp < 130) {
+            return temp;
+        }
+    }
+    
+    // Method 2: AMD / Intel via sensors (same regex patterns as System Info page)
+    QProcess sensorsProcess;
+    sensorsProcess.start("sensors");
+    sensorsProcess.waitForFinished(1000);
+    if (sensorsProcess.exitCode() == 0) {
+        QString output = QString::fromUtf8(sensorsProcess.readAllStandardOutput());
+        
+        // AMD GPU temperature
+        QRegularExpression amdRegex("amdgpu.*?temp1:\\s*\\+?([0-9.]+)°C");
+        QRegularExpressionMatch amdMatch = amdRegex.match(output);
+        if (amdMatch.hasMatch()) {
+            int temp = static_cast<int>(amdMatch.captured(1).toDouble());
+            if (temp > 0 && temp < 130) {
+                return temp;
+            }
+        }
+        
+        // Intel GPU temperature
+        QRegularExpression intelRegex("i915.*?temp1:\\s*\\+?([0-9.]+)°C");
+        QRegularExpressionMatch intelMatch = intelRegex.match(output);
+        if (intelMatch.hasMatch()) {
+            int temp = static_cast<int>(intelMatch.captured(1).toDouble());
+            if (temp > 0 && temp < 130) {
+                return temp;
+            }
+        }
+    }
+    
+    // Fallback: GPU temperature unavailable
+    return -1;
 }
 
 QVector<int> FanProfilePage::getRealFanRPMs()
@@ -1412,6 +1582,25 @@ void FanProfilePage::onPortSelectionChanged()
     } else if (portProfile == m_customProfileNames[3]) {
         m_custom3Radio->setChecked(true);
     }
+
+    // Update numeric temp/RPM editor for this port (temp stored in °C; display in user's unit)
+    int tempC = m_portTargetTemp.value(m_selectedPort, 50);
+    int rpm   = m_portTargetRpm.value(m_selectedPort, calculateRPMForCustomCurve(m_selectedPort, tempC));
+    int displayTemp = useFahrenheit() ? static_cast<int>(std::round(tempC * 9.0 / 5.0 + 32)) : tempC;
+
+    if (m_targetTempSpin && m_targetRpmSpin) {
+        QSignalBlocker blockTemp(m_targetTempSpin);
+        QSignalBlocker blockRpm(m_targetRpmSpin);
+        if (useFahrenheit()) {
+            m_targetTempSpin->setRange(32, 212);
+            m_targetTempSpin->setSuffix(" °F");
+        } else {
+            m_targetTempSpin->setRange(0, 100);
+            m_targetTempSpin->setSuffix(" °C");
+        }
+        m_targetTempSpin->setValue(displayTemp);
+        m_targetRpmSpin->setValue(rpm);
+    }
 }
 
 void FanProfilePage::onFanSizeChanged(int port)
@@ -1475,6 +1664,111 @@ void FanProfilePage::onRenameCustomProfile(int profileNum)
         
         qDebug() << "Renamed custom profile" << profileNum << "to" << newName;
     }
+}
+
+void FanProfilePage::onSensorSourceChanged(int index)
+{
+    Q_UNUSED(index)
+    
+    // Persist global control source (CPU / GPU)
+    QSettings settings("LConnect3", "FanControl");
+    QString source = (m_sensorSourceCombo && m_sensorSourceCombo->currentIndex() == 1) ? "GPU" : "CPU";
+    settings.setValue("ControlSource", source);
+}
+
+void FanProfilePage::onTargetTemperatureChanged(int value)
+{
+    if (m_selectedPort < 1 || m_selectedPort > 4) {
+        return;
+    }
+
+    // Value is in display unit (°C or °F); convert to °C for storage and curves
+    int tempC = useFahrenheit() ? static_cast<int>(std::round((value - 32) * 5.0 / 9.0)) : value;
+    tempC = qBound(0, tempC, 100);
+
+    m_portTargetTemp[m_selectedPort] = tempC;
+
+    // Adjust a mid-curve control point for this port to match the numeric editor
+    int rpm = m_portTargetRpm.value(m_selectedPort, calculateRPMForCustomCurve(m_selectedPort, tempC));
+    m_portTargetRpm[m_selectedPort] = rpm;
+
+    // Apply to custom curve
+    QVector<QPointF> curve;
+    if (m_customCurves.contains(m_selectedPort)) {
+        curve = m_customCurves[m_selectedPort];
+    } else {
+        QString portProfile = m_portProfiles.value(m_selectedPort, "Quiet");
+        QString internalName = getInternalProfileName(portProfile);
+        curve = getDefaultCurveForProfile(internalName);
+    }
+
+    if (!curve.isEmpty()) {
+        int idx = qMin(3, curve.size() - 1); // Use a middle anchor point
+
+        double newTemp = static_cast<double>(tempC);
+        // Keep curve monotonic in temperature
+        if (idx > 0) {
+            newTemp = qMax(newTemp, curve[idx - 1].x() + 1.0);
+        }
+        if (idx < curve.size() - 1) {
+            newTemp = qMin(newTemp, curve[idx + 1].x() - 1.0);
+        }
+        
+        curve[idx].setX(newTemp);
+        curve[idx].setY(static_cast<double>(rpm));
+        
+        m_customCurves[m_selectedPort] = curve;
+        saveCustomCurves();
+        m_fanCurveWidget->setCustomCurve(curve);
+
+        controlFanSpeeds();
+    }
+    
+    savePortTargets();
+}
+
+void FanProfilePage::onTargetRPMChanged(int value)
+{
+    if (m_selectedPort < 1 || m_selectedPort > 4) {
+        return;
+    }
+    
+    m_portTargetRpm[m_selectedPort] = value;
+    
+    int temp = m_portTargetTemp.value(m_selectedPort, 50);
+    
+    // Apply to custom curve using same anchor index as temperature
+    QVector<QPointF> curve;
+    if (m_customCurves.contains(m_selectedPort)) {
+        curve = m_customCurves[m_selectedPort];
+    } else {
+        QString portProfile = m_portProfiles.value(m_selectedPort, "Quiet");
+        QString internalName = getInternalProfileName(portProfile);
+        curve = getDefaultCurveForProfile(internalName);
+    }
+    
+    if (!curve.isEmpty()) {
+        int idx = qMin(3, curve.size() - 1);
+        
+        double newTemp = static_cast<double>(temp);
+        if (idx > 0) {
+            newTemp = qMax(newTemp, curve[idx - 1].x() + 1.0);
+        }
+        if (idx < curve.size() - 1) {
+            newTemp = qMin(newTemp, curve[idx + 1].x() - 1.0);
+        }
+        
+        curve[idx].setX(newTemp);
+        curve[idx].setY(static_cast<double>(value));
+        
+        m_customCurves[m_selectedPort] = curve;
+        saveCustomCurves();
+        
+        m_fanCurveWidget->setCustomCurve(curve);
+        controlFanSpeeds();
+    }
+    
+    savePortTargets();
 }
 
 void FanProfilePage::saveCustomCurves()
@@ -1580,6 +1874,70 @@ void FanProfilePage::loadCustomProfiles()
         }
         settings.endArray();
     }
+}
+
+void FanProfilePage::savePortTargets()
+{
+    QSettings settings("LConnect3", "FanTargets");
+    for (int port = 1; port <= 4; ++port) {
+        settings.setValue(QString("Port%1Temp").arg(port), m_portTargetTemp.value(port, 50));
+        settings.setValue(QString("Port%1RPM").arg(port),  m_portTargetRpm.value(port, 1000));
+    }
+}
+
+void FanProfilePage::loadPortTargets()
+{
+    QSettings settings("LConnect3", "FanTargets");
+    for (int port = 1; port <= 4; ++port) {
+        int temp = settings.value(QString("Port%1Temp").arg(port), 50).toInt();
+        int rpm  = settings.value(QString("Port%1RPM").arg(port), 1000).toInt();
+        m_portTargetTemp[port] = temp;
+        m_portTargetRpm[port]  = rpm;
+    }
+}
+
+void FanProfilePage::loadPortNames()
+{
+    QSettings settings("LConnect3", "PortNames");
+    for (int port = 1; port <= 4; ++port) {
+        QString name = settings.value(QString("Port%1").arg(port), QString()).toString();
+        if (!name.isEmpty()) {
+            m_portNames[port] = name;
+        }
+    }
+}
+
+void FanProfilePage::savePortNames()
+{
+    QSettings settings("LConnect3", "PortNames");
+    for (int port = 1; port <= 4; ++port) {
+        QString name = m_portNames.value(port, "Port " + QString::number(port));
+        settings.setValue(QString("Port%1").arg(port), name);
+    }
+}
+
+void FanProfilePage::onPortNameEdited(QTableWidgetItem *item)
+{
+    if (!item || item->column() != 1) {
+        return;
+    }
+    int port = item->row() + 1;
+    if (port < 1 || port > 4) {
+        return;
+    }
+    QString name = item->text().trimmed();
+    if (name.isEmpty()) {
+        name = "Port " + QString::number(port);
+    }
+    const int maxLen = 20;
+    if (name.length() > maxLen) {
+        name = name.left(maxLen);
+        m_fanTable->blockSignals(true);
+        item->setText(name);
+        m_fanTable->blockSignals(false);
+    }
+    m_portNames[port] = name;
+    savePortNames();
 }
 
 void FanProfilePage::savePortProfiles()

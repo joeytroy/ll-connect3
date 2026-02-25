@@ -2,6 +2,8 @@
 
 Complete Linux support for the Lian Li SL‑Infinity hub: a kernel fan driver and a Qt desktop app that mirrors Windows L‑Connect 3.
 
+Version 1.1.0 [CHANGELOG Information](CHANGELOG.md)
+
 ### Supported Distributions
 
 | Distribution Type | Tested On |
@@ -42,16 +44,13 @@ cd ll-connect3
 ./install.sh
 ```
 
-The installer will present a menu to select your distribution type (Debian, RHEL, or Arch-based).
+The installer will present a menu to select your distribution type:
+- **1** Debian-based (Ubuntu, Linux Mint, Pop!_OS, etc.)
+- **2** RHEL-based (Fedora, CentOS, Rocky, etc.)
+- **3** Arch-based (Arch, Manjaro, EndeavourOS, etc.)
+- **4** Bazzite OS (immutable / rpm-ostree)
 
-**For Bazzite OS (immutable system):**
-```bash
-git clone https://github.com/joeytroy/ll-connect3.git
-cd ll-connect3
-./install-bazzite.sh
-```
-
-The Bazzite installer uses `rpm-ostree` to layer packages and will prompt you to reboot after installing dependencies.
+Choose **4** for Bazzite; the script will use `rpm-ostree` to layer packages and may prompt you to reboot after installing dependencies, then run `./install.sh` again to complete the install.
 
 After install:
 - Run the app: `LLConnect3`

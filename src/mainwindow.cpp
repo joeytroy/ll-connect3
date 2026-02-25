@@ -13,6 +13,7 @@
 #include <QList>
 #include <QSettings>
 #include <QCloseEvent>
+#include "version.h"
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -68,6 +69,11 @@ void MainWindow::setupUI()
 {
     // UI is already set up by ui->setupUi(this)
     // Now we need to connect signals and set up additional functionality
+    
+    // Set version label from generated version header (VERSION.md)
+    if (ui->versionLabel) {
+        ui->versionLabel->setText(QStringLiteral("v") + QString::fromUtf8(APP_VERSION_STRING));
+    }
     
     // Connect navigation buttons
     connect(ui->systemInfoBtn, &QPushButton::clicked, this, &MainWindow::onNavigationClicked);
@@ -181,8 +187,8 @@ void MainWindow::setupSidebar()
 
     m_sidebarLayout->addStretch();
 
-    // Version label
-    m_versionLabel = new QLabel("v1.0.0");
+    // Version label (from VERSION.md at build time)
+    m_versionLabel = new QLabel(QStringLiteral("v") + QString::fromUtf8(APP_VERSION_STRING));
     m_versionLabel->setObjectName("versionLabel");
     m_sidebarLayout->addWidget(m_versionLabel);
     

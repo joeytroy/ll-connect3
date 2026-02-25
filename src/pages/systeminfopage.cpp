@@ -1,12 +1,14 @@
 #include "systeminfopage.h"
 #include "widgets/monitoringcard.h"
 #include <QFont>
+#include <QSettings>
 #include <QProcess>
 #include <QFile>
 #include <QTextStream>
 #include <QDir>
 #include <QRegularExpression>
 #include <QtMath>
+#include <cmath>
 #include <algorithm>
 #include <QTimer>
 #include <QDateTime>
@@ -548,11 +550,18 @@ void SystemInfoPage::updateCPUInfo()
         }
     }
     
-    // Update CPU temperature label
+    // Update CPU temperature label (respect Fan temperature unit: °C or °F)
     if (maxTemp > 0) {
-        m_cpuTempLabel->setText(QString::number(maxTemp) + " °C");
+        bool useF = QSettings("LianLi", "LConnect3").value("FanTemperatureUnit", "C").toString() == "F";
+        if (useF) {
+            int f = static_cast<int>(std::round(maxTemp * 9.0 / 5.0 + 32));
+            m_cpuTempLabel->setText(QString::number(f) + " °F");
+        } else {
+            m_cpuTempLabel->setText(QString::number(maxTemp) + " °C");
+        }
     } else {
-        m_cpuTempLabel->setText("-- °C");
+        bool useF = QSettings("LianLi", "LConnect3").value("FanTemperatureUnit", "C").toString() == "F";
+        m_cpuTempLabel->setText(useF ? "-- °F" : "-- °C");
     }
     
     // CPU Clock from /proc/cpuinfo
@@ -826,11 +835,18 @@ void SystemInfoPage::updateGPUInfo()
         m_gpuLoadCard->setSubValue("GPU LOAD");
     }
     
-    // Update GPU temperature
+    // Update GPU temperature (respect Fan temperature unit: °C or °F)
     if (gpuInfo.temperature > 0) {
-        m_gpuTempLabel->setText(QString::number(gpuInfo.temperature) + " °C");
+        bool useF = QSettings("LianLi", "LConnect3").value("FanTemperatureUnit", "C").toString() == "F";
+        if (useF) {
+            int f = static_cast<int>(std::round(gpuInfo.temperature * 9.0 / 5.0 + 32));
+            m_gpuTempLabel->setText(QString::number(f) + " °F");
+        } else {
+            m_gpuTempLabel->setText(QString::number(gpuInfo.temperature) + " °C");
+        }
     } else {
-        m_gpuTempLabel->setText("-- °C");
+        bool useF = QSettings("LianLi", "LConnect3").value("FanTemperatureUnit", "C").toString() == "F";
+        m_gpuTempLabel->setText(useF ? "-- °F" : "-- °C");
     }
     
     // Update GPU clock rate

@@ -51,11 +51,12 @@ show_menu() {
     echo -e "  ${BOLD}1)${NC} Debian-based (Ubuntu, Kubuntu, Linux Mint, Pop!_OS, etc.)"
     echo -e "  ${BOLD}2)${NC} RHEL-based (Fedora, CentOS, Rocky Linux, AlmaLinux, RHEL, etc.)"
     echo -e "  ${BOLD}3)${NC} Arch-based (Arch Linux, Manjaro, EndeavourOS, etc.)"
-    echo -e "  ${BOLD}4)${NC} Exit"
+    echo -e "  ${BOLD}4)${NC} Bazzite OS (immutable / rpm-ostree)"
+    echo -e "  ${BOLD}5)${NC} Exit"
     echo ""
     
     while true; do
-        read -p "Enter your choice [1-4]: " choice
+        read -p "Enter your choice [1-5]: " choice
         case $choice in
             1)
                 DISTRO_TYPE="debian"
@@ -73,11 +74,16 @@ show_menu() {
                 break
                 ;;
             4)
+                DISTRO_TYPE="bazzite"
+                print_info "Selected: Bazzite OS (immutable system)"
+                break
+                ;;
+            5)
                 print_info "Installation cancelled."
                 exit 0
                 ;;
             *)
-                print_error "Invalid option. Please enter 1, 2, 3, or 4."
+                print_error "Invalid option. Please enter 1, 2, 3, 4, or 5."
                 ;;
         esac
     done
@@ -90,6 +96,92 @@ check_sudo() {
         print_info "This script requires sudo privileges. You may be prompted for your password."
         sudo -v
     fi
+}
+
+# --- Bazzite OS (immutable / rpm-ostree) support ---
+check_immutable_system() {
+    if ! command -v rpm-ostree &> /dev/null; then
+        print_error "rpm-ostree not found. Option 4 is for Bazzite OS and other immutable Fedora-based systems."
+        print_info "If you're on a regular Fedora system, please choose option 2 (RHEL-based) instead."
+        exit 1
+    fi
+    print_success "Detected immutable system (rpm-ostree)"
+    if rpm-ostree status 2>/dev/null | grep -q "PendingUpdate\|UpdatePending"; then
+        print_warning "There are pending rpm-ostree updates that require a reboot."
+        print_info "Run 'rpm-ostree status' to see details."
+        read -p "Do you want to continue anyway? (y/n): " confirm
+        if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+            print_info "Please reboot first, then run this script again."
+            exit 0
+        fi
+    fi
+}
+
+# Layer packages via rpm-ostree (exits after prompting to reboot)
+install_bazzite_packages() {
+    local packages=("$@")
+    print_info "Installing dependencies for Bazzite OS..."
+    print_warning "This will layer packages using rpm-ostree, which may require a reboot."
+    echo ""
+    read -p "Do you want to proceed? (y/n): " confirm
+    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+        print_info "Installation cancelled."
+        exit 0
+    fi
+    RUNNING_KERNEL=$(uname -r)
+    local packages_to_install=("${packages[@]}")
+    if [[ " ${packages[@]} " =~ " kernel-devel-" ]]; then
+        packages_to_install+=("kernel-headers-$RUNNING_KERNEL")
+    fi
+    print_info "Layering: ${packages_to_install[*]}"
+    if ! sudo rpm-ostree install --allow-inactive "${packages_to_install[@]}"; then
+        print_error "Failed to install packages."
+        exit 1
+    fi
+    print_success "Packages layered successfully"
+    echo ""
+    print_warning "IMPORTANT: You must reboot for the packages to be available."
+    print_info "After rebooting, run this script again and choose option 4 (Bazzite OS):"
+    print_info "  ./install.sh"
+    print_info "To reboot now: sudo systemctl reboot"
+    exit 0
+}
+
+# Check Bazzite dependencies; layer missing ones (may exit)
+check_bazzite_dependencies() {
+    print_info "Checking dependencies for Bazzite OS..."
+    local missing=()
+    command -v gcc &> /dev/null  || missing+=("gcc")
+    command -v make &> /dev/null  || missing+=("make")
+    command -v cmake &> /dev/null || missing+=("cmake")
+    RUNNING_KERNEL=$(uname -r)
+    [ -d "/lib/modules/$RUNNING_KERNEL/build" ] || missing+=("kernel-devel-$RUNNING_KERNEL")
+    local qt6_found=false
+    if command -v pkg-config &> /dev/null && pkg-config --exists Qt6Core 2>/dev/null; then qt6_found=true; fi
+    if [ "$qt6_found" = false ] && { [ -d /usr/include/qt6 ] || [ -d /usr/include/Qt6 ]; }; then qt6_found=true; fi
+    if [ "$qt6_found" = false ] && { command -v qmake6 &> /dev/null || command -v qmake-qt6 &> /dev/null; }; then qt6_found=true; fi
+    [ "$qt6_found" = true ] || missing+=("qt6-qtbase-devel")
+    if command -v pkg-config &> /dev/null; then
+        pkg-config --exists libusb-1.0 2>/dev/null || missing+=("libusb1-devel")
+        pkg-config --exists hidapi-hidraw 2>/dev/null || missing+=("hidapi-devel")
+    else
+        missing+=("pkgconfig")
+    fi
+    if [ ${#missing[@]} -gt 0 ]; then
+        if rpm-ostree status 2>/dev/null | grep -q "PendingUpdate\|UpdatePending"; then
+            print_warning "Pending rpm-ostree updates require a reboot. Missing deps may be installed but not active."
+            print_info "Reboot first: sudo systemctl reboot"
+            print_info "Then run ./install.sh again and choose option 4."
+            exit 0
+        fi
+        install_bazzite_packages "${missing[@]}"
+    fi
+    print_success "All dependencies are installed"
+}
+
+install_bazzite_dependencies() {
+    check_immutable_system
+    check_bazzite_dependencies
 }
 
 # Install dependencies for Debian-based systems
@@ -120,9 +212,7 @@ install_rhel_dependencies() {
     # Check if running on immutable system (Bazzite OS)
     if command -v rpm-ostree &> /dev/null; then
         print_error "Detected immutable system (rpm-ostree)."
-        print_info "Bazzite OS and other immutable systems require a different installer."
-        print_info "Please use the Bazzite-specific installer instead:"
-        print_info "  ./install-bazzite.sh"
+        print_info "Please run this script again and choose option 4 (Bazzite OS) instead of RHEL-based."
         exit 1
     fi
     
@@ -218,6 +308,9 @@ install_dependencies() {
         arch)
             install_arch_dependencies
             ;;
+        bazzite)
+            install_bazzite_dependencies
+            ;;
         *)
             print_error "Unknown distribution type: $DISTRO_TYPE"
             exit 1
@@ -234,8 +327,10 @@ verify_kernel_build_env() {
     
     if [ ! -d "$KERNEL_BUILD_DIR" ]; then
         print_error "Kernel build directory not found: $KERNEL_BUILD_DIR"
-        
-        if [[ "$DISTRO_TYPE" == "rhel" ]]; then
+        if [[ "$DISTRO_TYPE" == "bazzite" ]]; then
+            print_info "On Bazzite OS, try:"
+            print_info "  sudo rpm-ostree install kernel-devel-\$(uname -r) && sudo systemctl reboot"
+        elif [[ "$DISTRO_TYPE" == "rhel" ]]; then
             print_info "On RHEL-based systems, try:"
             print_info "  sudo dnf install kernel-devel-\$(uname -r)"
             print_info "Or update your system and reboot to get matching kernel-devel:"
@@ -295,21 +390,39 @@ install_kernel_driver() {
         exit 1
     fi
     
-    # Install using the Makefile (which handles depmod)
-    print_info "Installing kernel module to system..."
-    make install
+    RUNNING_KERNEL=$(uname -r)
     
-    # Load the module
-    print_info "Loading kernel module..."
-    sudo rmmod Lian_Li_SL_INFINITY 2>/dev/null || true
-    
-    # For RHEL systems, try insmod first if modprobe fails
-    if ! sudo modprobe Lian_Li_SL_INFINITY 2>/dev/null; then
-        print_warning "modprobe failed, trying insmod..."
-        if ! sudo insmod Lian_Li_SL_INFINITY.ko 2>/dev/null; then
-            print_error "Failed to load kernel module!"
-            print_info "Check dmesg for errors: sudo dmesg | tail -20"
-            exit 1
+    if [[ "$DISTRO_TYPE" == "bazzite" ]]; then
+        # Bazzite: install to writable location (immutable systems have read-only /lib/modules)
+        print_info "Installing kernel module to writable location..."
+        MODULE_INSTALL_DIR="/usr/local/lib/modules/$RUNNING_KERNEL/extra"
+        sudo mkdir -p "$MODULE_INSTALL_DIR"
+        sudo cp Lian_Li_SL_INFINITY.ko "$MODULE_INSTALL_DIR/"
+        print_info "Updating module dependencies..."
+        sudo depmod -a
+        print_info "Loading kernel module..."
+        sudo rmmod Lian_Li_SL_INFINITY 2>/dev/null || true
+        if ! sudo modprobe Lian_Li_SL_INFINITY 2>/dev/null; then
+            print_warning "modprobe failed, trying insmod with full path..."
+            if ! sudo insmod "$MODULE_INSTALL_DIR/Lian_Li_SL_INFINITY.ko" 2>/dev/null; then
+                print_error "Failed to load kernel module!"
+                print_info "Check dmesg for errors: sudo dmesg | tail -20"
+                exit 1
+            fi
+        fi
+    else
+        # Standard: install using the Makefile (which handles depmod)
+        print_info "Installing kernel module to system..."
+        make install
+        print_info "Loading kernel module..."
+        sudo rmmod Lian_Li_SL_INFINITY 2>/dev/null || true
+        if ! sudo modprobe Lian_Li_SL_INFINITY 2>/dev/null; then
+            print_warning "modprobe failed, trying insmod..."
+            if ! sudo insmod Lian_Li_SL_INFINITY.ko 2>/dev/null; then
+                print_error "Failed to load kernel module!"
+                print_info "Check dmesg for errors: sudo dmesg | tail -20"
+                exit 1
+            fi
         fi
     fi
     
@@ -383,14 +496,20 @@ install_application() {
     mkdir -p "$BUILD_DIR"
     cd "$BUILD_DIR"
     
-    # Configure with CMake
+    # Configure with CMake (use /usr/local for Bazzite/immutable)
+    local CMAKE_PREFIX="/usr"
+    if [[ "$DISTRO_TYPE" == "bazzite" ]]; then
+        CMAKE_PREFIX="/usr/local"
+    fi
     print_info "Configuring build with CMake..."
-    if ! cmake -DCMAKE_INSTALL_PREFIX=/usr ..; then
+    if ! cmake -DCMAKE_INSTALL_PREFIX="$CMAKE_PREFIX" ..; then
         print_error "CMake configuration failed!"
-        
         if [[ "$DISTRO_TYPE" == "rhel" ]]; then
             print_info "On RHEL-based systems, ensure Qt6 development packages are installed:"
             print_info "  sudo dnf install qt6-qtbase-devel qt6-qtcharts-devel"
+        fi
+        if [[ "$DISTRO_TYPE" == "bazzite" ]]; then
+            print_info "On Bazzite, ensure Qt6 is layered: sudo rpm-ostree install qt6-qtbase-devel && reboot"
         fi
         exit 1
     fi
@@ -451,8 +570,8 @@ verify_installation() {
         print_error "✗ LLConnect3 application not found"
     fi
     
-    # Check desktop file
-    if [ -f "/usr/share/applications/lconnect3.desktop" ]; then
+    # Check desktop file (/usr or /usr/local for Bazzite)
+    if [ -f "/usr/share/applications/lconnect3.desktop" ] || [ -f "/usr/local/share/applications/lconnect3.desktop" ]; then
         print_success "✓ Desktop file installed"
     else
         print_warning "✗ Desktop file not found"
@@ -508,7 +627,15 @@ main() {
     echo "  - Check module status: lsmod | grep Lian_Li"
     echo ""
     
-    if [[ "$DISTRO_TYPE" == "rhel" ]]; then
+    if [[ "$DISTRO_TYPE" == "bazzite" ]]; then
+        print_warning "Bazzite OS notes:"
+        echo "  - After kernel updates via rpm-ostree, rebuild the module:"
+        echo "    cd $KERNEL_DIR && make clean && make"
+        echo "    sudo cp Lian_Li_SL_INFINITY.ko /usr/local/lib/modules/\$(uname -r)/extra/"
+        echo "    sudo depmod -a && sudo modprobe -r Lian_Li_SL_INFINITY && sudo modprobe Lian_Li_SL_INFINITY"
+        echo "  - Kernel module is in /usr/local/lib/modules/ (writable)"
+        echo ""
+    elif [[ "$DISTRO_TYPE" == "rhel" ]]; then
         print_warning "RHEL-based system note:"
         echo "  - If SELinux is enforcing, you may need to create a policy for the driver"
         echo "  - After kernel updates, rebuild the module with:"

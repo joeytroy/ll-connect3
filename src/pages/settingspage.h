@@ -50,6 +50,7 @@ private:
     // Behavior settings
     QGroupBox *m_behaviorGroup;
     QCheckBox *m_minimizeOnStartupCheck;
+    QComboBox *m_fanTempUnitCombo;
     
     // Fan configuration
     QGroupBox *m_fanConfigGroup;

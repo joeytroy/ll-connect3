@@ -7,6 +7,7 @@
 #include <QDebug>
 #include <QSettings>
 #include "mainwindow.h"
+#include "version.h"
 
 // Custom message handler to filter debug output based on settings
 void customMessageHandler(QtMsgType type, const QMessageLogContext &context, const QString &msg)
@@ -54,7 +55,7 @@ int main(int argc, char *argv[])
     
     // Set application properties
     app.setApplicationName("LL-Connect 3");
-    app.setApplicationVersion("1.0.0");
+    app.setApplicationVersion(APP_VERSION_STRING);
     app.setOrganizationName("L-Connect Linux");
     app.setWindowIcon(QIcon(":/icons/resources/logo.png"));
     
