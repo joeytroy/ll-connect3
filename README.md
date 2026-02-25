@@ -89,7 +89,7 @@ The uninstall script removes the app, the kernel module, its auto‑load config,
 
 <img src="docs/screenshots/systeminfo.png" width="600"/>
 
-- Per‑port custom fan curves with 4 presets and 3 custom slots. Each port can have it's own curve
+- Per‑port custom fan curves with 4 presets and 3 custom slots. Each port can have it's own curve. You can drive the fans based on CPU or GPU Temp or set specific Temp and RPM per port. You also can rename Ports with custom names
 
 <img src="docs/screenshots/fanprofile.png" width="600"/>
 
@@ -97,7 +97,7 @@ The uninstall script removes the app, the kernel module, its auto‑load config,
 
 <img src="docs/screenshots/lighting.png" width="600"/>
 
-- Basic Settings page with debug capability along with reseting application settings to defaults
+- Basic Settings page with debug capability along with reseting application settings to defaults including now setting Celsius or Fahrenhiet
 
 <img src="docs/screenshots/settings.png" width="600"/>
 
