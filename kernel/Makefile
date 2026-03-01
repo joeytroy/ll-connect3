@@ -4,11 +4,17 @@ KERNEL_VERSION := $(shell uname -r)
 KERNEL_DIR := /lib/modules/$(KERNEL_VERSION)/build
 MODULE_DIR := /lib/modules/$(KERNEL_VERSION)/extra
 
+# Set USE_LLVM=1 when building on clang-based kernels (CachyOS, Arch w/ clang)
+LLVM_FLAG :=
+ifdef USE_LLVM
+LLVM_FLAG := LLVM=1
+endif
+
 all:
-	make -C $(KERNEL_DIR) M=$(PWD) modules
+	make $(LLVM_FLAG) -C $(KERNEL_DIR) M=$(PWD) modules
 
 clean:
-	make -C $(KERNEL_DIR) M=$(PWD) clean
+	make $(LLVM_FLAG) -C $(KERNEL_DIR) M=$(PWD) clean
 
 install: all
 	sudo mkdir -p $(MODULE_DIR)

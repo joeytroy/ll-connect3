@@ -6,6 +6,7 @@
  * 
  * Exposes:
  *   /proc/Lian_li_SL_INFINITY/Port_X/fan_speed      (write 0–100, read current setting)
+ *   /proc/Lian_li_SL_INFINITY/Port_X/fan_rpm        (read actual RPM from hub hardware)
  *   /proc/Lian_li_SL_INFINITY/Port_X/fan_connected  (read 0/1 - is fan configured)
  *   /proc/Lian_li_SL_INFINITY/Port_X/fan_config     (write 0/1 - configure fan presence)
  *
@@ -15,6 +16,7 @@
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/hid.h>
+#include <linux/usb.h>
 #include <linux/proc_fs.h>
 #include <linux/uaccess.h>
 #include <linux/slab.h>
@@ -26,6 +28,7 @@ struct sli_port {
 	int index;  /* 0..3 */
 	struct sli_hub *hub;
 	u8 fan_speed;  /* Current fan speed (0-100) */
+	u16 fan_rpm;   /* Last read actual RPM from hub */
 	bool fan_connected;  /* Is a fan connected to this port? (user configured) */
 };
 
@@ -58,6 +61,69 @@ static int sli_send_segment(struct hid_device *hdev, const u8 *buf, size_t len)
 	return rc;
 }
 
+/*
+ * Query actual RPM for all 4 ports via USB GET_REPORT (Input Report 0xe0).
+ * The hub returns 65 bytes:  e0 [P1_hi P1_lo] [P2_hi P2_lo] [P3_hi P3_lo] [P4_hi P4_lo] ...
+ * RPM values are big-endian 16-bit unsigned.
+ *
+ * We bypass hid_hw_raw_request for Input reports because the Linux HID
+ * subsystem returns -EAGAIN when the interrupt endpoint is active.
+ * Instead we issue the USB control transfer directly.
+ */
+static int sli_query_rpm(struct sli_hub *hub)
+{
+	struct usb_interface *intf = to_usb_interface(hub->hdev->dev.parent);
+	struct usb_device *udev = interface_to_usbdev(intf);
+	int ifnum = intf->cur_altsetting->desc.bInterfaceNumber;
+	u8 *buf;
+	int rc;
+
+	buf = kmalloc(65, GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
+
+	/* USB HID GET_REPORT: wValue = (ReportType << 8) | ReportID
+	 *   ReportType 1 = Input, ReportID = 0xe0  →  wValue = 0x01e0 */
+	rc = usb_control_msg(udev, usb_rcvctrlpipe(udev, 0),
+			     0x01,	/* HID_REQ_GET_REPORT */
+			     USB_DIR_IN | USB_TYPE_CLASS | USB_RECIP_INTERFACE,
+			     0x01e0,	/* Input Report, ID 0xe0 */
+			     ifnum, buf, 65,
+			     1000);	/* 1 second timeout */
+
+	if (rc < 9) {
+		if (rc < 0)
+			pr_err("SLI: RPM query failed: %d\n", rc);
+		else
+			pr_err("SLI: RPM query short read: %d bytes\n", rc);
+		kfree(buf);
+		return rc < 0 ? rc : -EIO;
+	}
+
+	hub->ports[0].fan_rpm = (buf[1] << 8) | buf[2];
+	hub->ports[1].fan_rpm = (buf[3] << 8) | buf[4];
+	hub->ports[2].fan_rpm = (buf[5] << 8) | buf[6];
+	hub->ports[3].fan_rpm = (buf[7] << 8) | buf[8];
+
+	SLI_LOG("RPM: P1=%u P2=%u P3=%u P4=%u\n",
+		hub->ports[0].fan_rpm, hub->ports[1].fan_rpm,
+		hub->ports[2].fan_rpm, hub->ports[3].fan_rpm);
+
+	kfree(buf);
+	return 0;
+}
+
+/* Send commit command to apply buffered fan speed changes.
+ * The hub firmware buffers individual port speeds and applies them
+ * atomically when it receives the 0x50 commit. Without this, speed
+ * changes may not fully take effect (observed in Windows USB captures). */
+static int sli_commit(struct hid_device *hdev)
+{
+	u8 cmd[7] = {0xe0, 0x50, 0x00, 0x00, 0x00, 0x00, 0x00};
+
+	return sli_send_segment(hdev, cmd, sizeof(cmd));
+}
+
 /* Set fan speed for a specific port (0-100%) */
 static int sli_set_fan_speed(struct sli_port *p, u8 speed_percent)
 {
@@ -78,16 +144,22 @@ static int sli_set_fan_speed(struct sli_port *p, u8 speed_percent)
 	cmd[6] = 0x00;
 
 	rc = sli_send_segment(p->hub->hdev, cmd, sizeof(cmd));
-	
-	/* hid_hw_raw_request returns number of bytes transferred on success (7), not 0 */
-	if (rc >= 0) {
-		p->fan_speed = speed_percent;
-		SLI_LOG("Port %d set to %d%%\n", port_num, speed_percent);
-		return 0;  /* Return 0 for success */
-	} else {
+
+	if (rc < 0) {
 		pr_err("SLI: Failed to set port %d speed: error %d\n", port_num, rc);
-		return rc;  /* Return negative error code */
+		return rc;
 	}
+
+	p->fan_speed = speed_percent;
+	SLI_LOG("Port %d set to %d%%\n", port_num, speed_percent);
+
+	/* Commit so the hub firmware applies the new speed immediately */
+	rc = sli_commit(p->hub->hdev);
+	if (rc < 0)
+		pr_err("SLI: Commit after port %d speed change failed: %d\n",
+		       port_num, rc);
+
+	return 0;
 }
 
 /* Read handler for fan speed */
@@ -169,6 +241,34 @@ static ssize_t sli_read_fan_connected(struct file *file, char __user *ubuf,
 
 static const struct proc_ops sli_fan_connected_ops = {
 	.proc_read = sli_read_fan_connected,
+};
+
+/* Read handler for actual fan RPM (queries hub hardware) */
+static ssize_t sli_read_fan_rpm(struct file *file, char __user *ubuf,
+				size_t count, loff_t *ppos)
+{
+	struct sli_port *p = pde_data(file_inode(file));
+	char buf[16];
+	int len;
+
+	if (*ppos > 0)
+		return 0;
+
+	sli_query_rpm(p->hub);
+
+	len = snprintf(buf, sizeof(buf), "%u\n", p->fan_rpm);
+	if (len > count)
+		len = count;
+
+	if (copy_to_user(ubuf, buf, len))
+		return -EFAULT;
+
+	*ppos += len;
+	return len;
+}
+
+static const struct proc_ops sli_fan_rpm_ops = {
+	.proc_read = sli_read_fan_rpm,
 };
 
 /* Write handler for fan configuration */
@@ -314,6 +414,7 @@ static int sli_probe(struct hid_device *hdev, const struct hid_device_id *id)
 		hub->ports[i].index = i;
 		hub->ports[i].hub = hub;
 		hub->ports[i].fan_speed = 0;
+		hub->ports[i].fan_rpm = 0;
 		hub->ports[i].fan_connected = true;  /* Default to connected */
 	}
 
@@ -346,6 +447,9 @@ static int sli_probe(struct hid_device *hdev, const struct hid_device_id *id)
 		/* Fan speed control */
 		proc_create_data("fan_speed", 0666, port_dir, &sli_fan_speed_ops, p);
 		
+		/* Actual RPM from hub hardware (read-only) */
+		proc_create_data("fan_rpm", 0444, port_dir, &sli_fan_rpm_ops, p);
+
 		/* Fan connection status (read-only) */
 		proc_create_data("fan_connected", 0444, port_dir, &sli_fan_connected_ops, p);
 		

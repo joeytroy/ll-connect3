@@ -52,11 +52,12 @@ show_menu() {
     echo -e "  ${BOLD}2)${NC} RHEL-based (Fedora, CentOS, Rocky Linux, AlmaLinux, RHEL, etc.)"
     echo -e "  ${BOLD}3)${NC} Arch-based (Arch Linux, Manjaro, EndeavourOS, etc.)"
     echo -e "  ${BOLD}4)${NC} Bazzite OS (immutable / rpm-ostree)"
-    echo -e "  ${BOLD}5)${NC} Exit"
+    echo -e "  ${BOLD}5)${NC} CachyOS / Arch with clang kernel (builds with LLVM=1)"
+    echo -e "  ${BOLD}6)${NC} Exit"
     echo ""
     
     while true; do
-        read -p "Enter your choice [1-5]: " choice
+        read -p "Enter your choice [1-6]: " choice
         case $choice in
             1)
                 DISTRO_TYPE="debian"
@@ -79,11 +80,16 @@ show_menu() {
                 break
                 ;;
             5)
+                DISTRO_TYPE="cachyos"
+                print_info "Selected: CachyOS / Arch with clang kernel (LLVM=1)"
+                break
+                ;;
+            6)
                 print_info "Installation cancelled."
                 exit 0
                 ;;
             *)
-                print_error "Invalid option. Please enter 1, 2, 3, 4, or 5."
+                print_error "Invalid option. Please enter 1, 2, 3, 4, 5, or 6."
                 ;;
         esac
     done
@@ -296,6 +302,27 @@ install_arch_dependencies() {
     print_success "Dependencies installed"
 }
 
+# Install dependencies for CachyOS / Arch with clang kernel
+install_cachyos_dependencies() {
+    print_info "Installing dependencies for CachyOS / Arch with clang kernel..."
+
+    sudo pacman -S --needed --noconfirm \
+        base-devel \
+        linux-headers \
+        clang \
+        llvm \
+        lld \
+        cmake \
+        qt6-base \
+        qt6-charts \
+        lm_sensors \
+        libusb \
+        hidapi \
+        pkgconf
+
+    print_success "Dependencies installed (including LLVM/clang toolchain)"
+}
+
 # Install dependencies based on selected distribution type
 install_dependencies() {
     case $DISTRO_TYPE in
@@ -310,6 +337,9 @@ install_dependencies() {
             ;;
         bazzite)
             install_bazzite_dependencies
+            ;;
+        cachyos)
+            install_cachyos_dependencies
             ;;
         *)
             print_error "Unknown distribution type: $DISTRO_TYPE"
@@ -367,13 +397,26 @@ install_kernel_driver() {
     
     # Clean any previous build
     make clean 2>/dev/null || true
+
+    # Pass USE_LLVM=1 for clang-built kernels (CachyOS)
+    local MAKE_ARGS=""
+    if [[ "$DISTRO_TYPE" == "cachyos" ]]; then
+        MAKE_ARGS="USE_LLVM=1"
+        print_info "Building with LLVM=1 for clang-built kernel..."
+    fi
     
     # Build the module
     print_info "Building kernel module..."
-    if ! make; then
+    if ! make $MAKE_ARGS; then
         print_error "Kernel module build failed!"
         
-        if [[ "$DISTRO_TYPE" == "rhel" ]]; then
+        if [[ "$DISTRO_TYPE" == "cachyos" ]]; then
+            print_info "Common fixes for CachyOS / clang kernel:"
+            print_info "1. Ensure clang and llvm are installed:"
+            print_info "   sudo pacman -S clang llvm lld"
+            print_info "2. Ensure linux-headers matches your running kernel:"
+            print_info "   sudo pacman -S linux-headers"
+        elif [[ "$DISTRO_TYPE" == "rhel" ]]; then
             print_info "Common fixes for RHEL-based systems:"
             print_info "1. Ensure kernel-devel matches running kernel:"
             print_info "   sudo dnf install kernel-devel-\$(uname -r)"
@@ -413,7 +456,7 @@ install_kernel_driver() {
     else
         # Standard: install using the Makefile (which handles depmod)
         print_info "Installing kernel module to system..."
-        make install
+        make $MAKE_ARGS install
         print_info "Loading kernel module..."
         sudo rmmod Lian_Li_SL_INFINITY 2>/dev/null || true
         if ! sudo modprobe Lian_Li_SL_INFINITY 2>/dev/null; then
@@ -634,6 +677,12 @@ main() {
         echo "    sudo cp Lian_Li_SL_INFINITY.ko /usr/local/lib/modules/\$(uname -r)/extra/"
         echo "    sudo depmod -a && sudo modprobe -r Lian_Li_SL_INFINITY && sudo modprobe Lian_Li_SL_INFINITY"
         echo "  - Kernel module is in /usr/local/lib/modules/ (writable)"
+        echo ""
+    elif [[ "$DISTRO_TYPE" == "cachyos" ]]; then
+        print_warning "CachyOS / clang kernel notes:"
+        echo "  - After kernel updates, rebuild the module with:"
+        echo "    cd $KERNEL_DIR && make clean && make USE_LLVM=1 && sudo make USE_LLVM=1 install"
+        echo "  - The USE_LLVM=1 flag is required for clang-built kernels"
         echo ""
     elif [[ "$DISTRO_TYPE" == "rhel" ]]; then
         print_warning "RHEL-based system note:"

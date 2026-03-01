@@ -2,7 +2,7 @@
 
 Complete Linux support for the Lian Li SL‑Infinity hub: a kernel fan driver and a Qt desktop app that mirrors Windows L‑Connect 3.
 
-Version 1.1.0 [CHANGELOG Information](CHANGELOG.md)
+### [1.2.0] - 2026-02-28 — Real RPM, version check & driver fixes [CHANGELOG Information](CHANGELOG.md)
 
 ### Supported Distributions
 
@@ -11,6 +11,7 @@ Version 1.1.0 [CHANGELOG Information](CHANGELOG.md)
 | **Debian-based** | Ubuntu, Kubuntu 24.04 LTS, Linux Mint, Pop!_OS |
 | **RHEL-based** | Fedora 43, CentOS, Rocky Linux, AlmaLinux |
 | **Arch-based** | Arch Linux, Manjaro, EndeavourOS |
+| **CachyOS / Clang kernel** | CachyOS (builds with `LLVM=1`) |
 | **Immutable (rpm-ostree)** | Bazzite OS |
 
 ## Support This Project
@@ -49,13 +50,16 @@ The installer will present a menu to select your distribution type:
 - **2** RHEL-based (Fedora, CentOS, Rocky, etc.)
 - **3** Arch-based (Arch, Manjaro, EndeavourOS, etc.)
 - **4** Bazzite OS (immutable / rpm-ostree)
+- **5** CachyOS / Arch with clang kernel (builds with `LLVM=1`)
 
 Choose **4** for Bazzite; the script will use `rpm-ostree` to layer packages and may prompt you to reboot after installing dependencies, then run `./install.sh` again to complete the install.
+Choose **5** for CachyOS or any Arch system using a Clang-built kernel; this passes `LLVM=1` during the kernel module build.
 
 After install:
 - Run the app: `LLConnect3`
 - The kernel module auto‑loads on boot (`Lian_Li_SL_INFINITY`)
-- Fan control is available at `/proc/Lian_li_SL_INFINITY/Port_X/fan_speed`
+- Fan control: `/proc/Lian_li_SL_INFINITY/Port_X/fan_speed` (write 0–100)
+- Real RPM readback: `/proc/Lian_li_SL_INFINITY/Port_X/fan_rpm` (read-only, from hub hardware)
 
 Optional GPU monitoring tools (install based on your GPU):
 
@@ -85,19 +89,19 @@ The uninstall script removes the app, the kernel module, its auto‑load config,
 
 ## Application Overview
 
-- System Info shows CPU, GPU, RAM, Network and Hard Drive useage
+- **System Info** — CPU, GPU, RAM, Network and Hard Drive usage at a glance.
 
 <img src="docs/screenshots/systeminfo.png" width="600"/>
 
-- Per‑port custom fan curves with 4 presets and 3 custom slots. Each port can have it's own curve. You can drive the fans based on CPU or GPU Temp or set specific Temp and RPM per port. You also can rename Ports with custom names
+- **Fan Profile** — Per‑port custom fan curves with 4 presets (Quiet, Standard, High Speed, Full Speed) and 3 custom slots. Each port can have its own curve driven by CPU or GPU temperature, with specific temp/RPM targets per port. Ports can be renamed with custom labels. **Real RPM** is read directly from the hub hardware and displayed per port — no more estimated values.
 
 <img src="docs/screenshots/fanprofile.png" width="600"/>
 
-- Built‑in RGB page with 14 lighting effects: Breathing, Groove, Meteor, Mixing, Neon, Rainbow Wave, Runway, Spectrum Cycle, Stack, Staggered, Static, Tide, Tunnel, and Voice. Each effect supports color, speed/brightness control, with direction control where applicable 
+- **Lighting** — Built‑in RGB page with 14 effects: Breathing, Groove, Meteor, Mixing, Neon, Rainbow Wave, Runway, Spectrum Cycle, Stack, Staggered, Static, Tide, Tunnel, and Voice. Each effect supports per‑port color, speed/brightness control, and direction where applicable. Settings persist across restarts.
 
 <img src="docs/screenshots/lighting.png" width="600"/>
 
-- Basic Settings page with debug capability along with reseting application settings to defaults including now setting Celsius or Fahrenhiet
+- **Settings** — Startup behavior (minimize on launch), automatic update checking against GitHub releases, fan port configuration, temperature unit (°C/°F), and developer debug options. Reset all settings to defaults with one click.
 
 <img src="docs/screenshots/settings.png" width="600"/>
 
@@ -135,6 +139,7 @@ ls -R /proc/Lian_li_SL_INFINITY
 
 Notes:
 - Write 0–100 to `/proc/Lian_li_SL_INFINITY/Port_X/fan_speed` to set per‑port speed.
+- Read actual RPM from `/proc/Lian_li_SL_INFINITY/Port_X/fan_rpm` (queried from hub hardware).
 - Use the app for persistent fan presence configuration.
 
 ### Qt Application
@@ -166,9 +171,13 @@ ls -R /proc/Lian_li_SL_INFINITY
 echo 100 | sudo tee /proc/Lian_li_SL_INFINITY/Port_1/fan_speed
 echo  50 | sudo tee /proc/Lian_li_SL_INFINITY/Port_2/fan_speed
 
-# Read back values
+# Read back commanded speed (0–100)
 cat /proc/Lian_li_SL_INFINITY/Port_1/fan_speed
 cat /proc/Lian_li_SL_INFINITY/Port_2/fan_speed
+
+# Read real RPM from hub hardware
+cat /proc/Lian_li_SL_INFINITY/Port_1/fan_rpm
+cat /proc/Lian_li_SL_INFINITY/Port_2/fan_rpm
 
 # Kernel logs (helpful for debugging)
 sudo dmesg | grep -i "sli" | tail -20

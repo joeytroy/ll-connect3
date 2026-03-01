@@ -18,6 +18,7 @@ LightingPage::LightingPage(QWidget *parent)
     , m_currentBrightness(100)
     , m_directionLeft(false)
     , m_selectedPort(-1)
+    , m_isLoading(false)
     , m_lianLi(nullptr)
 {
     // Initialize port colors (2D array: [port][color_index])
@@ -320,29 +321,12 @@ void LightingPage::showEvent(QShowEvent *event)
 }
 
 
-void LightingPage::onEffectChanged()
+void LightingPage::updateEffectUI()
 {
-    QString oldEffect = m_currentEffect;
-    
-    // Save colors for the old effect before switching
-    if (!oldEffect.isEmpty()) {
-        saveEffectColors(oldEffect);
-    }
-    
-    m_currentEffect = m_effectCombo->currentText();
-    
-    // Load colors for the new effect (or use defaults if not saved)
-    loadEffectColors(m_currentEffect);
-    
-    // Clear old effect settings that don't apply to the new effect
-    clearOldEffectSettings(oldEffect, m_currentEffect);
-    
-    // Show/hide controls based on effect requirements (matching SL Infinity logic)
     bool needsColor = false;
     bool needsDirection = false;
-    
-    // Effects that need color (MODE_SPECIFIC_COLOR per OpenRGB)
-    if (m_currentEffect == "Static" || 
+
+    if (m_currentEffect == "Static" ||
         m_currentEffect == "Breathing" ||
         m_currentEffect == "Staggered" ||
         m_currentEffect == "Tide" ||
@@ -355,55 +339,53 @@ void LightingPage::onEffectChanged()
         m_currentEffect == "Neon") {
         needsColor = true;
     }
-    
-    // Effects with direction control (MODE_FLAG_HAS_DIRECTION_LR per OpenRGB)
-    if (        m_currentEffect == "Rainbow Wave" ||
+
+    if (m_currentEffect == "Rainbow Wave" ||
         m_currentEffect == "Stack" ||
         m_currentEffect == "Groove" ||
         m_currentEffect == "Tunnel") {
         needsDirection = true;
     }
-    
-    // Update UI visibility based on effect - match OpenRGB specifications
-    int numColorsNeeded = 1; // Default
+
+    int numColorsNeeded = 1;
     if (m_currentEffect == "Breathing") {
-        numColorsNeeded = 4; // OpenRGB allows up to 6 colors, but UI limited to 4 buttons
+        numColorsNeeded = 4;
     } else if (m_currentEffect == "Static") {
-        numColorsNeeded = 4; // Show 4 color buttons for 4 ports (one color per port)
+        numColorsNeeded = 4;
     } else if (m_currentEffect == "Groove") {
-        numColorsNeeded = 4; // Show 4 color buttons for 4 ports (one color per port)
+        numColorsNeeded = 4;
     } else if (m_currentEffect == "Staggered" || m_currentEffect == "Tide") {
-        numColorsNeeded = 2; // Staggered and Tide use 2 colors
+        numColorsNeeded = 2;
     } else if (m_currentEffect == "Runway") {
-        numColorsNeeded = 1; // Runway uses 1 color per port
+        numColorsNeeded = 1;
     } else if (m_currentEffect == "Meteor" || m_currentEffect == "Mixing") {
-        numColorsNeeded = 1; // Meteor and Mixing use 1 color per port
+        numColorsNeeded = 1;
     } else if (m_currentEffect == "Neon") {
-        numColorsNeeded = 1; // Neon uses 1 color per port
+        numColorsNeeded = 1;
     } else if (m_currentEffect == "Tunnel") {
-        numColorsNeeded = 4; // OpenRGB allows up to 4 colors
+        numColorsNeeded = 4;
     } else if (m_currentEffect == "Stack") {
-        numColorsNeeded = 1; // OpenRGB allows 1 color
+        numColorsNeeded = 1;
     }
-    
-    // Show/hide single color button (m_colorButton - not used in current UI, but keep for compatibility)
-    bool showSingleColor = needsColor && numColorsNeeded == 1 && 
-                           m_currentEffect != "Meteor" && m_currentEffect != "Mixing" && m_currentEffect != "Neon" && m_currentEffect != "Runway" && m_currentEffect != "Stack"; // Meteor, Mixing, Neon, Runway, and Stack use 4 buttons (one per port)
+
+    bool showSingleColor = needsColor && numColorsNeeded == 1 &&
+                           m_currentEffect != "Meteor" && m_currentEffect != "Mixing" &&
+                           m_currentEffect != "Neon" && m_currentEffect != "Runway" &&
+                           m_currentEffect != "Stack";
     if (m_colorLabel) m_colorLabel->setVisible(showSingleColor);
-    
-    // Show/hide multi-color buttons (m_staticColorWidget with m_colorButtons)
-    // Meteor, Mixing, Neon, Runway, and Stack show 4 buttons (one per port) even though they use 1 color per port
-    bool showMultiColor = needsColor && (numColorsNeeded > 1 || m_currentEffect == "Meteor" || m_currentEffect == "Mixing" || m_currentEffect == "Neon" || m_currentEffect == "Runway" || m_currentEffect == "Stack");
+
+    bool showMultiColor = needsColor && (numColorsNeeded > 1 ||
+                           m_currentEffect == "Meteor" || m_currentEffect == "Mixing" ||
+                           m_currentEffect == "Neon" || m_currentEffect == "Runway" ||
+                           m_currentEffect == "Stack");
     if (m_staticColorWidget) {
         m_staticColorWidget->setVisible(showMultiColor);
-        // Show only the needed number of buttons
-        // For Groove, Static, Breathing, Meteor, Mixing, Neon, Runway, and Stack, show 4 buttons (one per port)
         int buttonsToShow;
-        if (m_currentEffect == "Groove" || 
-            m_currentEffect == "Static" || m_currentEffect == "Breathing" || 
+        if (m_currentEffect == "Groove" ||
+            m_currentEffect == "Static" || m_currentEffect == "Breathing" ||
             m_currentEffect == "Meteor" || m_currentEffect == "Mixing" ||
             m_currentEffect == "Neon" || m_currentEffect == "Runway" || m_currentEffect == "Stack") {
-            buttonsToShow = 4; // One button per port
+            buttonsToShow = 4;
         } else {
             buttonsToShow = numColorsNeeded;
         }
@@ -413,12 +395,11 @@ void LightingPage::onEffectChanged()
             }
         }
     }
-    
-    // Update labels based on effect
-    // For Meteor, Static, Breathing, Groove, Mixing, Neon, Runway, and Stack: colors represent Port 1-4
-    if (m_currentEffect == "Meteor" || m_currentEffect == "Static" || 
+
+    if (m_currentEffect == "Meteor" || m_currentEffect == "Static" ||
         m_currentEffect == "Breathing" || m_currentEffect == "Groove" ||
-        m_currentEffect == "Mixing" || m_currentEffect == "Neon" || m_currentEffect == "Runway" || m_currentEffect == "Stack") {
+        m_currentEffect == "Mixing" || m_currentEffect == "Neon" ||
+        m_currentEffect == "Runway" || m_currentEffect == "Stack") {
         if (m_colorLabel) m_colorLabel->setText("PORT COLORS");
         for (int i = 0; i < 4; ++i) {
             if (m_colorLabels[i]) {
@@ -426,7 +407,6 @@ void LightingPage::onEffectChanged()
             }
         }
     } else {
-        // For other effects, colors represent Port 1-4
         if (m_colorLabel) m_colorLabel->setText("PORT COLORS");
         for (int i = 0; i < 4; ++i) {
             if (m_colorLabels[i]) {
@@ -434,30 +414,44 @@ void LightingPage::onEffectChanged()
             }
         }
     }
-    
-    // Static hides speed slider
+
     bool isStatic = (m_currentEffect == "Static");
     if (m_speedSlider) m_speedSlider->setVisible(!isStatic);
-    
-    // Set direction visibility
+
     if (m_directionWidget) m_directionWidget->setVisible(needsDirection);
-    
-    // Update color buttons to reflect the loaded colors for the new effect
-    // This ensures buttons show the correct colors for the current effect, not the previous one
+
     for (int i = 0; i < 4; ++i) {
         updateColorButton(i);
     }
-    
-    // Apply effect to device if connected
+}
+
+void LightingPage::onEffectChanged()
+{
+    if (m_isLoading) return;
+
+    QString oldEffect = m_currentEffect;
+
+    if (!oldEffect.isEmpty()) {
+        saveEffectColors(oldEffect);
+    }
+
+    m_currentEffect = m_effectCombo->currentText();
+
+    loadEffectColors(m_currentEffect);
+
+    clearOldEffectSettings(oldEffect, m_currentEffect);
+
+    updateEffectUI();
+
     applyCurrentEffect();
-    
-    // Save settings when effect changes
+
     saveLightingSettings();
 }
 
 void LightingPage::onSpeedChanged(int value)
 {
     m_currentSpeed = value;
+    saveLightingSettings();
 }
 
 void LightingPage::onBrightnessChanged(int value)
@@ -845,6 +839,7 @@ void LightingPage::applyCurrentEffect()
 void LightingPage::onDeviceConnected()
 {
     DEBUG_LOG("Lian Li device connected");
+    applyCurrentEffect();
 }
 
 void LightingPage::onDeviceDisconnected()
@@ -947,6 +942,8 @@ void LightingPage::updateColorButton(int buttonIndex)
 
 void LightingPage::saveLightingSettings()
 {
+    if (m_isLoading) return;
+
     QSettings settings("LConnect3", "Lighting");
     
     // Save basic settings
@@ -980,26 +977,23 @@ void LightingPage::saveLightingSettings()
 
 void LightingPage::loadLightingSettings()
 {
+    m_isLoading = true;
+
     QSettings settings("LConnect3", "Lighting");
-    
-    // Load basic settings with defaults
+
     m_currentEffect = settings.value("Effect", "Rainbow Wave").toString();
     m_currentSpeed = settings.value("Speed", 75).toInt();
     m_currentBrightness = settings.value("Brightness", 100).toInt();
     m_directionLeft = settings.value("DirectionLeft", false).toBool();
-    
-    // Load colors for the current effect (effect-specific colors)
-    // This will load saved colors for this effect, or use defaults if not saved
+
     loadEffectColors(m_currentEffect);
-    
-    // Legacy: Also try to load from old "PortColors" if effect-specific colors don't exist
-    // This is for backward compatibility with old saved settings
+
+    // Legacy fallback: if no effect-specific colors exist, try old PortColors array
     QString effectKey = QString("EffectColors/%1").arg(m_currentEffect);
     int effectSize = settings.beginReadArray(effectKey);
     settings.endArray();
-    
+
     if (effectSize == 0) {
-        // No effect-specific colors saved - try to load from legacy "PortColors"
         int size = settings.beginReadArray("PortColors");
         if (size > 0) {
             for (int i = 0; i < size && i < 16; ++i) {
@@ -1013,21 +1007,26 @@ void LightingPage::loadLightingSettings()
                     m_portColors[port][colorIdx] = QColor(r, g, b);
                 }
             }
-            // Save these legacy colors to the current effect for future use
             saveEffectColors(m_currentEffect);
         }
         settings.endArray();
     }
-    
-    // Load selected port
+
     m_selectedPort = settings.value("SelectedPort", -1).toInt();
-    
-    // Apply loaded settings to UI
+
+    // Update UI without triggering signal handlers
+    m_effectCombo->blockSignals(true);
     m_effectCombo->setCurrentText(m_currentEffect);
+    m_effectCombo->blockSignals(false);
+
+    m_speedSlider->blockSignals(true);
     m_speedSlider->setValue(m_currentSpeed);
+    m_speedSlider->blockSignals(false);
+
+    m_brightnessSlider->blockSignals(true);
     m_brightnessSlider->setValue(m_currentBrightness);
-    
-    // Set direction buttons
+    m_brightnessSlider->blockSignals(false);
+
     if (m_directionLeft) {
         m_leftDirectionBtn->setChecked(true);
         m_rightDirectionBtn->setChecked(false);
@@ -1035,57 +1034,54 @@ void LightingPage::loadLightingSettings()
         m_leftDirectionBtn->setChecked(false);
         m_rightDirectionBtn->setChecked(true);
     }
-    
-    // Update color buttons
+
     for (int i = 0; i < 4; ++i) {
         updateColorButton(i);
     }
+
+    m_isLoading = false;
+
+    updateEffectUI();
 }
 
 void LightingPage::resetToDefaults()
 {
-    // Reset to default colors - all ports get the same default colors
-    // Use white as the primary default color for all ports
-    QColor defaultColor1(255, 255, 255);  // White
-    QColor defaultColor2(255, 255, 255);  // White
-    QColor defaultColor3(255, 255, 255);  // White
-    QColor defaultColor4(255, 255, 255);  // White
-    
+    QColor defaultColor(255, 255, 255);
+
     for (int port = 0; port < 4; port++) {
-        m_portColors[port][0] = defaultColor1;
-        m_portColors[port][1] = defaultColor2;
-        m_portColors[port][2] = defaultColor3;
-        m_portColors[port][3] = defaultColor4;
+        for (int c = 0; c < 4; c++) {
+            m_portColors[port][c] = defaultColor;
+        }
     }
-    
-    // Reset to default settings
+
     m_currentEffect = "Rainbow Wave";
     m_currentSpeed = 75;
     m_currentBrightness = 100;
     m_directionLeft = false;
     m_selectedPort = -1;
-    
-    // Update UI
+
+    m_effectCombo->blockSignals(true);
     m_effectCombo->setCurrentText(m_currentEffect);
+    m_effectCombo->blockSignals(false);
+
+    m_speedSlider->blockSignals(true);
     m_speedSlider->setValue(m_currentSpeed);
+    m_speedSlider->blockSignals(false);
+
+    m_brightnessSlider->blockSignals(true);
     m_brightnessSlider->setValue(m_currentBrightness);
-    
-    if (m_directionLeft) {
-        m_leftDirectionBtn->setChecked(true);
-        m_rightDirectionBtn->setChecked(false);
-    } else {
-        m_leftDirectionBtn->setChecked(false);
-        m_rightDirectionBtn->setChecked(true);
-    }
-    
-    // Update color buttons
+    m_brightnessSlider->blockSignals(false);
+
+    m_leftDirectionBtn->setChecked(false);
+    m_rightDirectionBtn->setChecked(true);
+
     for (int i = 0; i < 4; ++i) {
         updateColorButton(i);
     }
-    
-    // Update effect visibility
-    onEffectChanged();
-    
+
+    updateEffectUI();
+    applyCurrentEffect();
+    saveLightingSettings();
 }
 
 void LightingPage::loadFanConfiguration()

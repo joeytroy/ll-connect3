@@ -35,7 +35,7 @@ FanProfilePage::FanProfilePage(QWidget *parent)
     , m_hidController(nullptr)
     , m_selectedPort(1) // Default to Port 1
 {
-    // Initialize all ports with 120mm fan size (2100 RPM max) by default
+    // Initialize all ports with 120mm fan size (2100 RPM max for graph display)
     for (int port = 1; port <= 4; ++port) {
         m_fanSizeMaxRPM[port] = 2100;
         m_portProfiles[port] = "Quiet"; // Initialize all ports to Quiet profile
@@ -913,18 +913,15 @@ int FanProfilePage::calculateRPMForTemperature(int temperature)
             curvePoints << QPointF(0, 120) << QPointF(25, 420) << QPointF(45, 840) 
                        << QPointF(65, 1050) << QPointF(80, 1680) << QPointF(90, 2100) << QPointF(100, 2100);
         } else if (profile == "Standard") {
-            // Standard Speed (StdSP): Balanced curve
             curvePoints << QPointF(0, 120) << QPointF(25, 420) << QPointF(40, 1050) << QPointF(55, 1260) 
                        << QPointF(70, 1680) << QPointF(90, 2100) << QPointF(100, 2100);
         } else if (profile == "High Speed") {
-            // High Speed (HighSP): Smooth progressive ramp
             curvePoints << QPointF(0, 120) << QPointF(25, 910) << QPointF(35, 1140) << QPointF(50, 1470)
                        << QPointF(70, 1800) << QPointF(85, 2100) << QPointF(100, 2100);
         } else if (profile == "Full Speed") {
             curvePoints << QPointF(0, 120) << QPointF(25, 2100) << QPointF(40, 2100) << QPointF(55, 2100)
                        << QPointF(70, 2100) << QPointF(90, 2100) << QPointF(100, 2100);
         } else {
-            // Default to Quiet (original Lian Li curve)
             curvePoints << QPointF(0, 120) << QPointF(25, 420) << QPointF(45, 840) 
                        << QPointF(65, 1050) << QPointF(80, 1680) << QPointF(90, 2100) << QPointF(100, 2100);
         }
@@ -1117,41 +1114,54 @@ int FanProfilePage::getRealFanRPM(int port)
         int connected = connectedStr.toInt(&ok);
         
         if (ok && connected == 0) {
-            // Fan not connected according to kernel driver
             return 0;
         }
     } else {
-        // If we can't read the status, assume not connected
         return 0;
     }
     
-    // Fan is connected - show fake RPM based on temperature and custom curve
-    // This gives a realistic RPM display even though we can't read actual RPM
-    int baseRPM = calculateRPMForCustomCurve(port, m_cachedTemperature);
+    // Read actual RPM from kernel driver (hub hardware)
+    QString rpmPath = QString("/proc/Lian_li_SL_INFINITY/Port_%1/fan_rpm").arg(port);
+    QFile rpmFile(rpmPath);
     
-    // Add some realistic noise (±50 RPM)
-    static int noiseCounter = 0;
-    noiseCounter++;
-    int noise = ((noiseCounter % 100) - 50); // -50 to +50
-    int fakeRPM = baseRPM + noise;
+    if (rpmFile.open(QIODevice::ReadOnly)) {
+        QTextStream stream(&rpmFile);
+        QString rpmStr = stream.readLine().trimmed();
+        rpmFile.close();
+        
+        bool ok;
+        int rpm = rpmStr.toInt(&ok);
+        if (ok && rpm >= 0) {
+            return rpm;
+        }
+    }
     
-    // Clamp to reasonable range
-    fakeRPM = qBound(400, fakeRPM, 2100); // Minimum 400 RPM to show it's running
+    // Fallback: estimate RPM from commanded speed percentage
+    QString speedPath = QString("/proc/Lian_li_SL_INFINITY/Port_%1/fan_speed").arg(port);
+    QFile speedFile(speedPath);
     
-    return fakeRPM;
+    if (speedFile.open(QIODevice::ReadOnly)) {
+        QTextStream stream(&speedFile);
+        QString speedStr = stream.readLine().trimmed();
+        speedFile.close();
+        
+        bool ok;
+        int pct = speedStr.toInt(&ok);
+        if (ok && pct > 0) {
+            return convertPercentageToRPM(pct);
+        }
+    }
+    
+    return 0;
 }
 
 int FanProfilePage::convertPercentageToRPM(int percentage)
 {
-    // Convert kernel driver percentage (0-100%) to RPM values
-    // Based on calibration: RPM = Percentage × 21
-    // 40% = 840 RPM, 50% = 1040 RPM, 60% = 1260 RPM, 
-    // 70% = 1480 RPM, 80% = 1680 RPM, 90% = 1880 RPM, 100% = 2100 RPM
-    
+    // Fallback RPM estimate from commanded speed percentage.
+    // Only used when kernel driver fan_rpm is unavailable.
     if (percentage <= 0) return 0;
     if (percentage >= 100) return 2100;
     
-    // Linear conversion: RPM = Percentage × 21
     int rpm = percentage * 21;
     
     return rpm;
@@ -1982,7 +1992,6 @@ QVector<QPointF> FanProfilePage::getDefaultCurveForProfile(const QString &profil
         curvePoints << QPointF(0, 120) << QPointF(25, 2100) << QPointF(40, 2100) << QPointF(55, 2100)
                    << QPointF(70, 2100) << QPointF(90, 2100) << QPointF(100, 2100);
     } else {
-        // Default to Quiet
         curvePoints << QPointF(0, 120) << QPointF(25, 420) << QPointF(45, 840) 
                    << QPointF(65, 1050) << QPointF(80, 1680) << QPointF(90, 2100) << QPointF(100, 2100);
     }

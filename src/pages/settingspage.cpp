@@ -1,14 +1,20 @@
 #include "settingspage.h"
 #include "lightingpage.h"
+#include "version.h"
 #include <QSettings>
 #include <QFile>
 #include <QTextStream>
 #include <QDebug>
 #include <QMessageBox>
+#include <QNetworkReply>
+#include <QDesktopServices>
+#include <QUrl>
+#include <QVersionNumber>
 
 SettingsPage::SettingsPage(QWidget *parent)
     : QWidget(parent)
     , m_lightingPage(nullptr)
+    , m_networkManager(new QNetworkAccessManager(this))
 {
     setupUI();
     setupBehaviorSettings();
@@ -124,6 +130,17 @@ void SettingsPage::setupBehaviorSettings()
     });
     behaviorLayout->addWidget(m_minimizeOnStartupCheck);
 
+    bool checkUpdates = settings.value("Startup/CheckForUpdates", true).toBool();
+    m_checkForUpdatesCheck = new QCheckBox("Check for updates on startup");
+    m_checkForUpdatesCheck->setObjectName("settingsCheck");
+    m_checkForUpdatesCheck->setChecked(checkUpdates);
+    connect(m_checkForUpdatesCheck, &QCheckBox::toggled, this, [](bool checked) {
+        QSettings s("LianLi", "LConnect3");
+        s.setValue("Startup/CheckForUpdates", checked);
+        s.sync();
+    });
+    behaviorLayout->addWidget(m_checkForUpdatesCheck);
+
     QLabel *tempUnitLabel = new QLabel("Fan temperature unit:");
     tempUnitLabel->setObjectName("settingsLabel");
     behaviorLayout->addWidget(tempUnitLabel);
@@ -221,6 +238,8 @@ void SettingsPage::onResetAll()
     m_debugFanSpeedsCheck->setChecked(false);
     m_debugFanLightsCheck->setChecked(false);
     m_kernelLoggingCheck->setChecked(false);
+    
+    m_checkForUpdatesCheck->setChecked(true);
     
     // Reset fan configuration to all enabled
     m_fanPort1Check->setChecked(true);
@@ -516,4 +535,67 @@ void SettingsPage::setupDebugSettings()
 
     // Push the persisted kernel logging preference down to the driver on startup
     writeKernelLoggingFlag(kernelLogs && debugEnabled);
+}
+
+void SettingsPage::checkForUpdatesOnStartup()
+{
+    QSettings settings("LianLi", "LConnect3");
+    if (settings.value("Startup/CheckForUpdates", true).toBool()) {
+        checkForUpdates(true);
+    }
+}
+
+void SettingsPage::checkForUpdates(bool silent)
+{
+    QNetworkRequest request(QUrl(
+        "https://raw.githubusercontent.com/joeytroy/ll-connect3/main/VERSION.md"));
+    request.setTransferTimeout(5000);
+
+    QNetworkReply *reply = m_networkManager->get(request);
+    connect(reply, &QNetworkReply::finished, this, [this, reply, silent]() {
+        reply->deleteLater();
+
+        if (reply->error() != QNetworkReply::NoError) {
+            if (!silent) {
+                QMessageBox::warning(this, "Update Check Failed",
+                    "Could not check for updates:\n" + reply->errorString());
+            }
+            return;
+        }
+
+        QString remoteVersion = QString::fromUtf8(reply->readAll()).trimmed();
+        QString localVersion = QString(APP_VERSION_STRING);
+
+        QVersionNumber remote = QVersionNumber::fromString(remoteVersion);
+        QVersionNumber local  = QVersionNumber::fromString(localVersion);
+
+        if (remote.isNull()) {
+            if (!silent) {
+                QMessageBox::warning(this, "Update Check",
+                    "Could not parse remote version.");
+            }
+            return;
+        }
+
+        if (remote > local) {
+            QMessageBox msgBox(this);
+            msgBox.setWindowTitle("Update Available");
+            msgBox.setIcon(QMessageBox::Information);
+            msgBox.setText(QString("A new version of LL-Connect 3 is available!\n\n"
+                                   "Current version: %1\n"
+                                   "Latest version:  %2")
+                               .arg(localVersion, remoteVersion));
+            msgBox.setInformativeText("Would you like to visit the releases page?");
+            msgBox.setStandardButtons(QMessageBox::Yes | QMessageBox::No);
+            msgBox.setDefaultButton(QMessageBox::Yes);
+
+            if (msgBox.exec() == QMessageBox::Yes) {
+                QDesktopServices::openUrl(
+                    QUrl("https://github.com/joeytroy/ll-connect3/releases"));
+            }
+        } else if (!silent) {
+            QMessageBox::information(this, "Up to Date",
+                QString("You are running the latest version (%1).").arg(localVersion));
+        }
+    });
 }
