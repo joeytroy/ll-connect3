@@ -97,7 +97,7 @@ The uninstall script removes the app, the kernel module, its auto‑load config,
 
 <img src="docs/screenshots/fanprofile.png" width="600"/>
 
-- **Lighting** — Built‑in RGB page with 14 effects: Breathing, Groove, Meteor, Mixing, Neon, Rainbow Wave, Runway, Spectrum Cycle, Stack, Staggered, Static, Tide, Tunnel, and Voice. Each effect supports per‑port color, speed/brightness control, and direction where applicable. Settings persist across restarts.
+- **Lighting** — Built‑in RGB page with 17 effects: Breathing, Color Cycle, Groove, Meteor, Mixing, Neon, Rainbow Wave, Render, Runway, Spectrum Cycle, Stack, Stack Multi Color, Staggered, Static, Tide, Tunnel, and Voice. Each effect exposes the correct color controls per the hardware protocol — per‑port colors for Static/Breathing, mode‑specific colors (1–4) for pattern effects, and no color controls for auto‑color effects. Speed, brightness, and direction where applicable. Settings persist across restarts.
 
 <img src="docs/screenshots/lighting.png" width="600"/>
 

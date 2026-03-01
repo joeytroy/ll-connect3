@@ -774,10 +774,11 @@ void SLInfinityPage::applyCurrentEffect()
             int port = portsToApply[i];
             QColor portColor = m_portColors[port][0];
             if (!portColor.isValid()) portColor = currentColor;
+            QColor grooveColors[2] = { portColor, QColor(0, 0, 0) };
             int channel = port * 2;
-            m_lianLi->setChannelGroove(channel, portColor, m_currentSpeed, m_currentBrightness, m_directionLeft);
+            m_lianLi->setChannelGroove(channel, grooveColors, m_currentSpeed, m_currentBrightness, m_directionLeft);
             if (channel + 1 < 8) {
-                m_lianLi->setChannelGroove(channel + 1, portColor, m_currentSpeed, m_currentBrightness, m_directionLeft);
+                m_lianLi->setChannelGroove(channel + 1, grooveColors, m_currentSpeed, m_currentBrightness, m_directionLeft);
             }
         }
     } else if (m_currentEffect == "Tunnel") {

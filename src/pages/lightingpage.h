@@ -49,6 +49,11 @@ private:
     void clearOldEffectSettings(const QString &oldEffect, const QString &newEffect);
     void updateEffectUI();
     
+    bool isPerPortEffect() const;
+    int getEffectColorCount() const;
+    bool effectHasDirection() const;
+    bool effectHasSpeed() const;
+    
     QVBoxLayout *m_mainLayout;
     QHBoxLayout *m_contentLayout;
     QVBoxLayout *m_leftLayout;
