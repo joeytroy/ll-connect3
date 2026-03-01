@@ -2,7 +2,7 @@
 
 Complete Linux support for the Lian Li SL‑Infinity hub: a kernel fan driver and a Qt desktop app that mirrors Windows L‑Connect 3.
 
-### [1.2.0] - 2026-02-28 — Real RPM, version check & driver fixes [CHANGELOG Information](CHANGELOG.md)
+#### [1.2.0] - 2026-02-28 — Lighting overhaul, real RPM, version check & driver fixes [CHANGELOG Information](CHANGELOG.md)
 
 ### Supported Distributions
 
