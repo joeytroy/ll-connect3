@@ -13,7 +13,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Find Qt6 components
-find_package(Qt6 REQUIRED COMPONENTS Core Widgets)
+find_package(Qt6 REQUIRED COMPONENTS Core Widgets Network)
 
 # Find libusb
 find_package(PkgConfig REQUIRED)
@@ -112,6 +112,7 @@ target_include_directories(LLConnect3 PRIVATE
 target_link_libraries(LLConnect3
     Qt6::Core
     Qt6::Widgets
+    Qt6::Network
     lian_li_qt_integration
     lian_li_sl_infinity_controller
     ${HIDAPI_LIBRARIES}

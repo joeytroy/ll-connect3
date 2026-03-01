@@ -6,6 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [1.2.0] - 2026-02-28 — Lighting overhaul, real RPM, version check & driver fixes
+
+### Added
+- **3 new lighting effects**: Color Cycle (3 colors, direction), Render (4 colors, direction), and Stack Multi Color (no colors, direction) — now 17 effects total, matching the full OpenRGB mode set for this device.
+- **Correct per-effect color controls**: Effects now show the right number of color buttons matching the hardware protocol — per-port colors for Static/Breathing, 2 mode-specific colors for Staggered/Tide/Runway/Mixing, 3 for Color Cycle, 4 for Tunnel/Render, 1 for Stack/Meteor/Groove, and no color controls for Rainbow Wave/Spectrum Cycle/Neon/Voice/Stack Multi Color.
+- **Real fan RPM from hardware**: Kernel driver now queries the hub via USB GET_REPORT (Input Report 0xe0) and exposes actual RPM per port at `/proc/Lian_li_SL_INFINITY/Port_X/fan_rpm` (read-only). The app reads these instead of faking RPM from the curve.
+- **Update checker**: New "Check for updates on startup" toggle in Settings (on by default). On launch the app fetches `VERSION.md` from GitHub, compares with the running version using semantic versioning, and offers to open the releases page when an update is available.
+- **CachyOS / Clang kernel support**: New installer option (5) for CachyOS and Arch systems built with a Clang kernel. Passes `LLVM=1` to the kernel module build automatically.
+
+### Fixed
+- **Lighting color data layout**: The interleaved 72-byte color pattern used by all multi-color effects (Staggered, Tide, Runway, Mixing, Meteor, Groove, Color Cycle, Tunnel, Render) was incorrectly treating OpenRGB's byte offsets as LED indices and multiplying by 3, spacing the data 3x too wide. The hardware received garbled color data. Now matches OpenRGB's `SetChannelMode` exactly.
+- **Color button enable state**: Mode-specific color buttons (Color 1/2/3/4) were incorrectly disabled based on which physical fan ports were connected. Now only per-port effects (Static, Breathing) disable buttons for empty ports; mode-specific buttons are always enabled.
+- **LED settings persistence**: `resetToDefaults()` now explicitly saves via `saveLightingSettings()` so reset values survive a restart. Added `m_isLoading` guard and `blockSignals()` in `loadLightingSettings()` to prevent spurious saves during load. `onSpeedChanged()` now saves. `onDeviceConnected()` now reapplies the current effect to hardware.
+- **Fan speed commit command**: Kernel driver now sends the `0xe0 0x50` commit command after each per-port speed write, matching the protocol observed in Windows USB captures. Without this the hub firmware may not apply buffered speed changes.
+- **RPM query via direct USB**: The initial `hid_hw_raw_request(HID_INPUT_REPORT)` returned `-EAGAIN` because the Linux HID subsystem routes Input reports through the interrupt endpoint. Replaced with a direct `usb_control_msg()` to bypass this restriction.
+
+### Changed
+- **Version**: Bumped to 1.2.0.
+
+---
+
 ## [1.1.0] - 2026-02-25 — Fan profile controls & versioning
 
 ### Added

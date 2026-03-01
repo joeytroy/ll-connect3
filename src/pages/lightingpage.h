@@ -47,6 +47,12 @@ private:
     void updatePortButtonStates();
     void applyCurrentEffect();
     void clearOldEffectSettings(const QString &oldEffect, const QString &newEffect);
+    void updateEffectUI();
+    
+    bool isPerPortEffect() const;
+    int getEffectColorCount() const;
+    bool effectHasDirection() const;
+    bool effectHasSpeed() const;
     
     QVBoxLayout *m_mainLayout;
     QHBoxLayout *m_contentLayout;
@@ -82,7 +88,9 @@ private:
     QColor m_portColors[4][4]; // [port][color_index] - supports up to 4 colors per port
     bool m_portEnabled[4];  // Which ports have fans connected
     int m_selectedPort; // -1 = none, 0-3 = port index
-    
+
+    bool m_isLoading;  // Guard flag to suppress signals/saves during settings load
+
     // Lian Li integration
     LianLiQtIntegration *m_lianLi;
 };

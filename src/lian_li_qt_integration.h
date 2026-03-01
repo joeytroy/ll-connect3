@@ -74,10 +74,13 @@ public:
     bool setChannelColorCycle(int channel, const QColor colors[3], int speed = 50, int brightness = 100, bool directionLeft = false);
     bool setVoiceEffect(int speed = 50, int brightness = 100);
     bool setChannelRunwayWithColors(int channel, const QColor colors[2], int speed = 50, int brightness = 100, bool directionLeft = false);
-    bool setGrooveEffect(const QColor &color, int speed = 50, int brightness = 100, bool directionLeft = false);
-    bool setChannelGroove(int channel, const QColor &color, int speed = 50, int brightness = 100, bool directionLeft = false);
-    bool setTunnelEffect(const QColor &color, int speed = 50, int brightness = 100, bool directionLeft = false);
+    bool setGrooveEffect(const QColor colors[2], int speed = 50, int brightness = 100, bool directionLeft = false);
+    bool setChannelGroove(int channel, const QColor colors[2], int speed = 50, int brightness = 100, bool directionLeft = false);
+    bool setTunnelEffect(const QColor colors[4], int speed = 50, int brightness = 100, bool directionLeft = false);
     bool setChannelTunnel(int channel, const QColor colors[4], int speed = 50, int brightness = 100, bool directionLeft = false);
+    bool setRenderEffect(const QColor colors[4], int speed = 50, int brightness = 100, bool directionLeft = false);
+    bool setChannelRender(int channel, const QColor colors[4], int speed = 50, int brightness = 100, bool directionLeft = false);
+    bool setStackMultiColorEffect(int speed = 50, int brightness = 100, bool directionLeft = false);
     
     // Helper to convert percentage values to hardware values
     static uint8_t convertSpeed(int speedPercent);

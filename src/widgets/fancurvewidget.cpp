@@ -37,7 +37,6 @@ FanCurveWidget::FanCurveWidget(QWidget *parent)
 
 void FanCurveWidget::setFanSize(int maxRPM)
 {
-    // Only change the display labels, not the actual curve scaling
     m_displayRpmMax = maxRPM;
     // Keep m_rpmMax at 2100 so curves don't move
     update();
@@ -87,8 +86,7 @@ void FanCurveWidget::setupCurveData()
     m_curvePoints.clear();
     
     if (m_profile == "Quiet") {
-        // Data points for 120mm fans (max 2100 RPM)
-        m_curvePoints << QPointF(0, 120);     // 0°C: 120 RPM minimum
+        m_curvePoints << QPointF(0, 120);
         m_curvePoints << QPointF(25, 420);
         m_curvePoints << QPointF(45, 840);
         m_curvePoints << QPointF(65, 1050);
@@ -96,35 +94,31 @@ void FanCurveWidget::setupCurveData()
         m_curvePoints << QPointF(90, 2100);
         m_curvePoints << QPointF(100, 2100);
     } else if (m_profile == "Standard") {
-        // Standard Speed curve (StdSP) - Balanced curve
-        m_curvePoints << QPointF(0, 120);     // 0°C: 120 RPM minimum
-        m_curvePoints << QPointF(25, 420);    // 25°C: 420 RPM (34 dBA)
-        m_curvePoints << QPointF(40, 1050);   // 40°C: 1050 RPM (39 dBA)
-        m_curvePoints << QPointF(55, 1260);   // 55°C: 1260 RPM (45 dBA)
-        m_curvePoints << QPointF(70, 1680);   // 70°C: 1680 RPM (52 dBA)
-        m_curvePoints << QPointF(90, 2100);   // 90°C: 2100 RPM (60 dBA)
-        m_curvePoints << QPointF(100, 2100);  // 100°C: 2100 RPM (60 dBA)
+        m_curvePoints << QPointF(0, 120);
+        m_curvePoints << QPointF(25, 420);
+        m_curvePoints << QPointF(40, 1050);
+        m_curvePoints << QPointF(55, 1260);
+        m_curvePoints << QPointF(70, 1680);
+        m_curvePoints << QPointF(90, 2100);
+        m_curvePoints << QPointF(100, 2100);
     } else if (m_profile == "High Speed") {
-        // High Speed curve (HighSP) - Smooth progressive ramp
-        m_curvePoints << QPointF(0, 120);     // 0°C: 120 RPM minimum
-        m_curvePoints << QPointF(25, 910);    // 25°C: 910 RPM (~36 dBA)
-        m_curvePoints << QPointF(35, 1140);   // 35°C: 1140 RPM (~42 dBA)
-        m_curvePoints << QPointF(50, 1470);   // 50°C: 1470 RPM (~48 dBA)
-        m_curvePoints << QPointF(70, 1800);   // 70°C: 1800 RPM (~55 dBA)
-        m_curvePoints << QPointF(85, 2100);   // 85°C: 2100 RPM (60 dBA)
-        m_curvePoints << QPointF(100, 2100);  // 100°C: 2100 RPM (60 dBA)
+        m_curvePoints << QPointF(0, 120);
+        m_curvePoints << QPointF(25, 910);
+        m_curvePoints << QPointF(35, 1140);
+        m_curvePoints << QPointF(50, 1470);
+        m_curvePoints << QPointF(70, 1800);
+        m_curvePoints << QPointF(85, 2100);
+        m_curvePoints << QPointF(100, 2100);
     } else if (m_profile == "Full Speed") {
-        // Maximum speed curve - instant max cooling
-        m_curvePoints << QPointF(0, 120);     // 0°C: 120 RPM minimum
-        m_curvePoints << QPointF(25, 2100);   // 25°C: 2100 RPM (60 dBA) - instant max
-        m_curvePoints << QPointF(40, 2100);   // 40°C: 2100 RPM (60 dBA)
-        m_curvePoints << QPointF(55, 2100);   // 55°C: 2100 RPM (60 dBA)
-        m_curvePoints << QPointF(70, 2100);   // 70°C: 2100 RPM (60 dBA)
-        m_curvePoints << QPointF(90, 2100);   // 90°C: 2100 RPM (60 dBA)
-        m_curvePoints << QPointF(100, 2100);  // 100°C: 2100 RPM (60 dBA)
+        m_curvePoints << QPointF(0, 120);
+        m_curvePoints << QPointF(25, 2100);
+        m_curvePoints << QPointF(40, 2100);
+        m_curvePoints << QPointF(55, 2100);
+        m_curvePoints << QPointF(70, 2100);
+        m_curvePoints << QPointF(90, 2100);
+        m_curvePoints << QPointF(100, 2100);
     } else {
-        // Default to Quiet (original Lian Li curve)
-        m_curvePoints << QPointF(0, 120);     // 0°C: 120 RPM minimum
+        m_curvePoints << QPointF(0, 120);
         m_curvePoints << QPointF(25, 420);
         m_curvePoints << QPointF(45, 840);
         m_curvePoints << QPointF(65, 1050);
@@ -198,9 +192,8 @@ void FanCurveWidget::drawGrid(QPainter &painter)
     
     painter.setPen(QPen(m_gridColor, 1));
     for (int rpm = 0; rpm <= m_displayRpmMax; rpm += rpmStep) {
-        // Calculate position using 120mm scale (2100 max)
-        double scaleFactor = (double)rpm / m_displayRpmMax; // 0.0 to 1.0
-        double positionRpm = scaleFactor * 2100.0; // Map to 120mm scale for positioning
+        double scaleFactor = (double)rpm / m_displayRpmMax;
+        double positionRpm = scaleFactor * 2100.0;
         int y = graphRect.bottom() - (positionRpm - m_rpmMin) / (m_rpmMax - m_rpmMin) * graphRect.height();
         painter.drawLine(graphRect.left(), y, graphRect.right(), y);
     }
@@ -208,9 +201,8 @@ void FanCurveWidget::drawGrid(QPainter &painter)
     // Minor horizontal grid lines
     painter.setPen(QPen(m_gridColor, 0.5));
     for (int rpm = minorStep; rpm < m_displayRpmMax; rpm += rpmStep) {
-        // Calculate position using 120mm scale (2100 max)
-        double scaleFactor = (double)rpm / m_displayRpmMax; // 0.0 to 1.0
-        double positionRpm = scaleFactor * 2100.0; // Map to 120mm scale for positioning
+        double scaleFactor = (double)rpm / m_displayRpmMax;
+        double positionRpm = scaleFactor * 2100.0;
         int y = graphRect.bottom() - (positionRpm - m_rpmMin) / (m_rpmMax - m_rpmMin) * graphRect.height();
         painter.drawLine(graphRect.left(), y, graphRect.right(), y);
     }
@@ -241,16 +233,15 @@ void FanCurveWidget::drawAxes(QPainter &painter)
         painter.drawText(x - 18, graphRect.bottom() + 15, 36, 15, Qt::AlignCenter, label);
     }
     
-    // Y-axis labels (RPM) - adjust labels based on fan size, but position stays the same
-    int rpmStep = 420; // Default for 120mm fans (2100 / 5)
+    // Y-axis labels (RPM)
+    int yRpmStep = 420; // Default for 120mm fans (2100 / 5)
     if (m_displayRpmMax == 1600) {
-        rpmStep = 400; // For 140mm fans (1600 / 4)
+        yRpmStep = 400; // For 140mm fans (1600 / 4)
     }
     
-    for (int rpm = 0; rpm <= m_displayRpmMax; rpm += rpmStep) {
-        // Calculate position using 120mm scale (2100 max), but show 140mm labels (1600 max)
-        double scaleFactor = (double)rpm / m_displayRpmMax; // 0.0 to 1.0
-        double positionRpm = scaleFactor * 2100.0; // Map to 120mm scale for positioning
+    for (int rpm = 0; rpm <= m_displayRpmMax; rpm += yRpmStep) {
+        double scaleFactor = (double)rpm / m_displayRpmMax;
+        double positionRpm = scaleFactor * 2100.0;
         int y = graphRect.bottom() - (positionRpm - m_rpmMin) / (m_rpmMax - m_rpmMin) * graphRect.height();
         painter.drawText(5, y - 10, m_marginLeft - 10, 20, Qt::AlignRight | Qt::AlignVCenter, QString::number(rpm));
     }

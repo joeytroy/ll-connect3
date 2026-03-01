@@ -13,6 +13,7 @@
 #include <QList>
 #include <QSettings>
 #include <QCloseEvent>
+#include <QTimer>
 #include "version.h"
 
 MainWindow::MainWindow(QWidget *parent)
@@ -99,6 +100,9 @@ void MainWindow::setupUI()
     // Set initial page
     ui->contentStack->setCurrentIndex(0);
     ui->systemInfoBtn->setChecked(true);
+
+    // Check for updates after the window is fully shown
+    QTimer::singleShot(2000, m_settingsPage, &SettingsPage::checkForUpdatesOnStartup);
 }
 
 void MainWindow::setupSidebar()

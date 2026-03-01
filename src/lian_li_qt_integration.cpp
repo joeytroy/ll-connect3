@@ -1032,7 +1032,7 @@ bool LianLiQtIntegration::setVoiceEffect(int speed, int brightness)
     return allSuccess;
 }
 
-bool LianLiQtIntegration::setGrooveEffect(const QColor &color, int speed, int brightness, bool directionLeft)
+bool LianLiQtIntegration::setGrooveEffect(const QColor colors[2], int speed, int brightness, bool directionLeft)
 {
     if (!isConnected()) {
         return false;
@@ -1042,7 +1042,7 @@ bool LianLiQtIntegration::setGrooveEffect(const QColor &color, int speed, int br
     for (int channel = 0; channel < getChannelCount(); channel++) {
         if (!isChannelValid(channel)) continue;
         
-        if (!setChannelGroove(channel, color, speed, brightness, directionLeft)) {
+        if (!setChannelGroove(channel, colors, speed, brightness, directionLeft)) {
             allSuccess = false;
         }
     }
@@ -1050,7 +1050,7 @@ bool LianLiQtIntegration::setGrooveEffect(const QColor &color, int speed, int br
     return allSuccess;
 }
 
-bool LianLiQtIntegration::setChannelGroove(int channel, const QColor &color, int speed, int brightness, bool directionLeft)
+bool LianLiQtIntegration::setChannelGroove(int channel, const QColor colors[2], int speed, int brightness, bool directionLeft)
 {
     if (!isConnected() || !isChannelValid(channel)) {
         return false;
@@ -1060,16 +1060,16 @@ bool LianLiQtIntegration::setChannelGroove(int channel, const QColor &color, int
     uint8_t hwBrightness = convertBrightness(brightness);
     uint8_t hwDirection = convertDirection(directionLeft);
     
-    // Groove mode uses MODE_SPECIFIC_COLOR with 1 color
-    SLInfinityColor slColor = qColorToSLInfinity(color);
-    std::vector<SLInfinityColor> colorVec = {slColor};
+    SLInfinityColor slColor1 = qColorToSLInfinity(colors[0]);
+    SLInfinityColor slColor2 = qColorToSLInfinity(colors[1]);
+    std::vector<SLInfinityColor> colorVec = {slColor1, slColor2};
     
-    // Set the color for this channel
-    if (!m_controller->SetChannelColors(static_cast<uint8_t>(channel), colorVec)) {
+    float brightness_scale = static_cast<float>(brightness) / 100.0f;
+    
+    if (!m_controller->SetChannelColors(static_cast<uint8_t>(channel), colorVec, brightness_scale)) {
         return false;
     }
     
-    // Send commit action for groove effect (has direction control)
     return m_controller->SendCommitAction(
         static_cast<uint8_t>(channel),
         0x27, // Groove mode
@@ -1079,10 +1079,8 @@ bool LianLiQtIntegration::setChannelGroove(int channel, const QColor &color, int
     );
 }
 
-bool LianLiQtIntegration::setTunnelEffect(const QColor &color, int speed, int brightness, bool directionLeft)
+bool LianLiQtIntegration::setTunnelEffect(const QColor colors[4], int speed, int brightness, bool directionLeft)
 {
-    // Tunnel uses 4 colors - use same color 4 times for backward compatibility
-    QColor colors[4] = {color, color, color, color};
     if (!isConnected()) {
         return false;
     }
@@ -1109,14 +1107,12 @@ bool LianLiQtIntegration::setChannelTunnel(int channel, const QColor colors[4], 
     uint8_t hwBrightness = convertBrightness(brightness);
     uint8_t hwDirection = convertDirection(directionLeft);
     
-    // Tunnel mode uses MODE_SPECIFIC_COLOR with 4 colors (interleaved pattern)
     std::vector<SLInfinityColor> slColors;
     slColors.reserve(4);
     for (int i = 0; i < 4; ++i) {
         slColors.push_back(qColorToSLInfinity(colors[i]));
     }
     
-    // Set the colors for this channel with interleaved pattern (for Tunnel)
     float brightness_scale = static_cast<float>(brightness) / 100.0f;
     if (!m_controller->SetChannelColors(static_cast<uint8_t>(channel), slColors, brightness_scale, true)) {
         return false;
@@ -1124,7 +1120,6 @@ bool LianLiQtIntegration::setChannelTunnel(int channel, const QColor colors[4], 
     
     QThread::msleep(10);
     
-    // Send commit action for tunnel effect (has direction control)
     return m_controller->SendCommitAction(
         static_cast<uint8_t>(channel),
         0x29, // Tunnel mode
@@ -1132,4 +1127,84 @@ bool LianLiQtIntegration::setChannelTunnel(int channel, const QColor colors[4], 
         hwDirection,
         hwBrightness
     );
+}
+
+bool LianLiQtIntegration::setRenderEffect(const QColor colors[4], int speed, int brightness, bool directionLeft)
+{
+    if (!isConnected()) {
+        return false;
+    }
+    
+    bool allSuccess = true;
+    for (int channel = 0; channel < getChannelCount(); channel++) {
+        if (!isChannelValid(channel)) continue;
+        
+        if (!setChannelRender(channel, colors, speed, brightness, directionLeft)) {
+            allSuccess = false;
+        }
+    }
+    
+    return allSuccess;
+}
+
+bool LianLiQtIntegration::setChannelRender(int channel, const QColor colors[4], int speed, int brightness, bool directionLeft)
+{
+    if (!isConnected() || !isChannelValid(channel)) {
+        return false;
+    }
+    
+    uint8_t hwSpeed = convertSpeed(speed);
+    uint8_t hwBrightness = convertBrightness(brightness);
+    uint8_t hwDirection = convertDirection(directionLeft);
+    
+    std::vector<SLInfinityColor> slColors;
+    slColors.reserve(4);
+    for (int i = 0; i < 4; ++i) {
+        slColors.push_back(qColorToSLInfinity(colors[i]));
+    }
+    
+    float brightness_scale = static_cast<float>(brightness) / 100.0f;
+    if (!m_controller->SetChannelColors(static_cast<uint8_t>(channel), slColors, brightness_scale, true)) {
+        return false;
+    }
+    
+    QThread::msleep(10);
+    
+    return m_controller->SendCommitAction(
+        static_cast<uint8_t>(channel),
+        0x28, // Render mode
+        hwSpeed,
+        hwDirection,
+        hwBrightness
+    );
+}
+
+bool LianLiQtIntegration::setStackMultiColorEffect(int speed, int brightness, bool directionLeft)
+{
+    if (!isConnected()) {
+        return false;
+    }
+    
+    uint8_t hwSpeed = convertSpeed(speed);
+    uint8_t hwBrightness = convertBrightness(brightness);
+    uint8_t hwDirection = convertDirection(directionLeft);
+    
+    bool allSuccess = true;
+    for (int channel = 0; channel < getChannelCount(); channel++) {
+        if (!isChannelValid(channel)) continue;
+        
+        bool success = m_controller->SendCommitAction(
+            static_cast<uint8_t>(channel),
+            0x21, // Stack Multi Color mode
+            hwSpeed,
+            hwDirection,
+            hwBrightness
+        );
+        
+        if (!success) {
+            allSuccess = false;
+        }
+    }
+    
+    return allSuccess;
 }

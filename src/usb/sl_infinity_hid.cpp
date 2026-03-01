@@ -257,220 +257,61 @@ bool SLInfinityHIDController::SetChannelColors(uint8_t channel, const std::vecto
         
         DEBUG_PRINTF("SetChannelColors: Set 1 color (single, solid) for channel %d: Color=%d,%d,%d brightness=%f (scale=%f, limit=%f)\n", 
                      channel, color.r, color.g, color.b, brightness, color_brightness_scale, infinityBrightnessLimit);
-    } else if (colors.size() == 2) {
-        // Two colors - for modes like Tide, Runway, Meteor
-        // OpenRGB pattern: resize to 4 colors, fill unused with black, then interleave
-        // This matches OpenRGB's SetChannelMode implementation exactly
-        // IMPORTANT: Don't apply color limiter first - calculate brightness scale using original colors
-        // then apply both brightness and limiter together (like OpenRGB does)
-        SLInfinityColor color0 = colors[0];  // Keep original for brightness calculation
-        SLInfinityColor color1 = colors[1];  // Keep original for brightness calculation
-        SLInfinityColor color2 = SLInfinityColor::fromRGB(0, 0, 0);  // Black
-        SLInfinityColor color3 = SLInfinityColor::fromRGB(0, 0, 0);  // Black
+    } else if (colors.size() == 4 && !interleavedPattern) {
+        // Solid per-fan pattern for Static mode
+        // Fan 0 = LEDs 0-15, Fan 1 = LEDs 16-31, Fan 2 = LEDs 32-47, Fan 3 = LEDs 48-63
+        std::vector<SLInfinityColor> colorArray = colors;
+        for (int i = 0; i < 4; i++) {
+            ApplyColorLimiter(colorArray[i]);
+        }
         
-        // OpenRGB pattern: interleave colors across LEDs using formula: (i * 12) + (j * 3)
-        // where i goes 0-5 (6 iterations) and j goes 0-3 (4 colors)
-        // This creates: Color0 at 0,12,24,36,48,60 | Color1 at 3,15,27,39,51,63 | etc.
-        // BUT: j=2 and j=3 are black (unused colors), so only j=0 and j=1 actually have data
-        SLInfinityColor colorArray[4] = {color0, color1, color2, color3};
+        for (int fan = 0; fan < 4; fan++) {
+            SLInfinityColor color = colorArray[fan];
+            int base = fan * 16 * 3;
+            for (int led = 0; led < 16; led++) {
+                int idx = base + led * 3;
+                led_data[idx + 0] = color.r;
+                led_data[idx + 1] = color.b;
+                led_data[idx + 2] = color.g;
+            }
+        }
         
-        // Fill the entire buffer with black first
+        memset(&led_data[64 * 3], 0x00, 16 * 3);
+        
+        DEBUG_PRINTF("SetChannelColors: Set 4 fan colors (solid per fan) for channel %d\n", channel);
+    } else if (colors.size() >= 2 && colors.size() <= 4) {
+        // 2, 3, or 4 mode-specific colors — OpenRGB interleaved 72-byte pattern
+        // All mode-specific effects use the SAME interleaved format:
+        //   colors are resized to 4 (padded with black), then laid out as
+        //   fan_led_data[ (i*12) + (j*3) + 0/1/2 ] = R/B/G
+        //   where i=0..5 (6 slots) and j=0..3 (4 colors)
+        // CRITICAL: (i*12)+(j*3) is a BYTE offset into led_data, NOT an LED index.
+        
+        SLInfinityColor colorArray[4] = {
+            colors[0],
+            colors.size() > 1 ? colors[1] : SLInfinityColor(),
+            colors.size() > 2 ? colors[2] : SLInfinityColor(),
+            colors.size() > 3 ? colors[3] : SLInfinityColor()
+        };
+        
         memset(led_data, 0x00, 80 * 3);
         
         for (unsigned int j = 0; j < 4; j++) {
-            // Calculate brightness scale like OpenRGB: brightness * infinityBrightnessLimit(color)
-            // Use ORIGINAL color values (before limiting) for the brightness limit calculation
-            float infinityBrightnessLimit = 1.0f;
-            if ((colorArray[j].r + colorArray[j].b + colorArray[j].g) > 460) {
-                infinityBrightnessLimit = 460.0f / (colorArray[j].r + colorArray[j].b + colorArray[j].g);
-            }
-            float color_brightness_scale = brightness * infinityBrightnessLimit;
+            float limit = 1.0f;
+            int sum = colorArray[j].r + colorArray[j].b + colorArray[j].g;
+            if (sum > 460) limit = 460.0f / sum;
+            float scale = brightness * limit;
             
             for (unsigned int i = 0; i < 6; i++) {
-                int cur_led_idx = (i * 12) + (j * 3);
-                if (cur_led_idx < 80) {  // Ensure we don't exceed buffer
-                    int led_data_idx = cur_led_idx * 3;
-                    // Apply brightness and limiter together (like OpenRGB)
-                    uint8_t r_val = (unsigned char)(colorArray[j].r * color_brightness_scale);
-                    uint8_t b_val = (unsigned char)(colorArray[j].b * color_brightness_scale);
-                    uint8_t g_val = (unsigned char)(colorArray[j].g * color_brightness_scale);
-                    led_data[led_data_idx + 0] = r_val;  // Red
-                    led_data[led_data_idx + 1] = b_val;  // Blue (RBG format!)
-                    led_data[led_data_idx + 2] = g_val;  // Green
-                    
-                    // Debug: Log Color2 positions specifically (all 6 positions)
-                    if (j == 1) {
-                        DEBUG_PRINTF("  Color2 at LED[%d]: RGB=(%d,%d,%d) brightness_scale=%f (raw color: %d,%d,%d, limit=%f)\n", 
-                                     cur_led_idx, r_val, g_val, b_val, color_brightness_scale,
-                                     colorArray[j].r, colorArray[j].g, colorArray[j].b, infinityBrightnessLimit);
-                    }
-                }
+                int byteOff = (i * 12) + (j * 3);
+                led_data[byteOff + 0] = (unsigned char)(colorArray[j].r * scale);
+                led_data[byteOff + 1] = (unsigned char)(colorArray[j].b * scale);
+                led_data[byteOff + 2] = (unsigned char)(colorArray[j].g * scale);
             }
         }
         
-        // EXPERIMENTAL: Meteor mode might need a denser pattern for Color2 to be visible
-        // The interleaved pattern only has Color2 at 6 sparse positions (3,15,27,39,51,63)
-        // Try filling adjacent positions with Color2 to create a more visible "meteor trail"
-        // This might help the hardware firmware interpret the pattern correctly
-        // Fill Color2 at positions 2,3,4 (adjacent to the main Color2 at 3)
-        for (int offset = -1; offset <= 1; offset++) {
-            for (unsigned int i = 0; i < 6; i++) {
-                int base_led = (i * 12) + 3;  // Base Color2 position
-                int cur_led_idx = base_led + offset;
-                if (cur_led_idx >= 0 && cur_led_idx < 80) {
-                    int led_data_idx = cur_led_idx * 3;
-                    // Only overwrite if it's currently black (0,0,0)
-                    if (led_data[led_data_idx] == 0 && led_data[led_data_idx+1] == 0 && led_data[led_data_idx+2] == 0) {
-                        float infinityBrightnessLimit = 1.0f;
-                        if ((color1.r + color1.b + color1.g) > 460) {
-                            infinityBrightnessLimit = 460.0f / (color1.r + color1.b + color1.g);
-                        }
-                        float color_brightness_scale = brightness * infinityBrightnessLimit;
-                        led_data[led_data_idx + 0] = (unsigned char)(color1.r * color_brightness_scale);
-                        led_data[led_data_idx + 1] = (unsigned char)(color1.b * color_brightness_scale);
-                        led_data[led_data_idx + 2] = (unsigned char)(color1.g * color_brightness_scale);
-                    }
-                }
-            }
-        }
-        DEBUG_PRINTF("  Applied experimental Color2 density increase for Meteor mode\n");
-        
-        DEBUG_PRINTF("SetChannelColors: Set 2 colors for channel %d: Color1=%d,%d,%d Color2=%d,%d,%d brightness=%f (OpenRGB interleaved pattern)\n", 
-                     channel,
-                     color0.r, color0.g, color0.b,
-                     color1.r, color1.g, color1.b,
-                     brightness);
-        
-        // Debug: Dump a sample of the LED buffer to verify pattern
-        DEBUG_PRINTF("  LED buffer sample (first 20 LEDs):\n");
-        for (int i = 0; i < 20 && (i * 3) < (80 * 3); i++) {
-            int idx = i * 3;
-            DEBUG_PRINTF("    LED[%d]: R=%d G=%d B=%d\n", i, led_data[idx], led_data[idx+2], led_data[idx+1]);
-        }
-        DEBUG_PRINTF("  LED buffer sample (LEDs 60-69):\n");
-        for (int i = 60; i < 70 && (i * 3) < (80 * 3); i++) {
-            int idx = i * 3;
-            DEBUG_PRINTF("    LED[%d]: R=%d G=%d B=%d\n", i, led_data[idx], led_data[idx+2], led_data[idx+1]);
-        }
-    } else if (colors.size() == 4) {
-        // Four colors - Different patterns based on mode
-        // interleavedPattern=true: For Tunnel (interleaved pattern like OpenRGB)
-        // interleavedPattern=false: For Static (solid color per fan)
-        
-        // Ensure we have 4 colors
-        std::vector<SLInfinityColor> colorArray = colors;
-        while (colorArray.size() < 4) {
-            colorArray.push_back(SLInfinityColor::fromRGB(0, 0, 0));
-        }
-        
-        if (interleavedPattern) {
-            // Interleaved pattern for Tunnel (matches OpenRGB)
-            // Pattern: cur_led_idx = (i * 12) + (j * 3)
-            // where i goes 0-5 (6 iterations) and j goes 0-3 (4 colors)
-            // This creates: Color0 at 0,12,24,36,48,60 | Color1 at 3,15,27,39,51,63 | Color2 at 6,18,30,42,54,66 | Color3 at 9,21,33,45,57,69
-            float brightness_value = brightness; // brightness is already 0-1.0
-            
-            for (unsigned int j = 0; j < 4; j++) {
-                // Calculate brightness scale like OpenRGB: brightness * infinityBrightnessLimit(color)
-                float infinityBrightnessLimit = 1.0f;
-                if ((colorArray[j].r + colorArray[j].b + colorArray[j].g) > 460) {
-                    infinityBrightnessLimit = 460.0f / (colorArray[j].r + colorArray[j].b + colorArray[j].g);
-                }
-                float color_brightness_scale = brightness_value * infinityBrightnessLimit;
-                
-                for (unsigned int i = 0; i < 6; i++) {
-                    int cur_led_idx = (i * 12) + (j * 3);
-                    if (cur_led_idx < 80) {
-                        int led_data_idx = cur_led_idx * 3;
-                        led_data[led_data_idx + 0] = (unsigned char)(colorArray[j].r * color_brightness_scale);
-                        led_data[led_data_idx + 1] = (unsigned char)(colorArray[j].b * color_brightness_scale);
-                        led_data[led_data_idx + 2] = (unsigned char)(colorArray[j].g * color_brightness_scale);
-                    }
-                }
-            }
-            
-            DEBUG_PRINTF("SetChannelColors: Set 4 colors (interleaved pattern) for channel %d: Color1=%d,%d,%d Color2=%d,%d,%d Color3=%d,%d,%d Color4=%d,%d,%d brightness=%f\n", 
-                         channel,
-                         colorArray[0].r, colorArray[0].g, colorArray[0].b,
-                         colorArray[1].r, colorArray[1].g, colorArray[1].b,
-                         colorArray[2].r, colorArray[2].g, colorArray[2].b,
-                         colorArray[3].r, colorArray[3].g, colorArray[3].b,
-                         brightness);
-        } else {
-            // Solid per-fan pattern for Static mode
-            // CRITICAL: Each fan needs ALL 16 LEDs set to the same color for solid appearance
-            // Fan 1 = LEDs 0-15 gets colors[0] (repeated 16 times)
-            // Fan 2 = LEDs 16-31 gets colors[1] (repeated 16 times)
-            // Fan 3 = LEDs 32-47 gets colors[2] (repeated 16 times)
-            // Fan 4 = LEDs 48-63 gets colors[3] (repeated 16 times)
-            
-            // Apply color limiter to all colors first
-            for (int i = 0; i < 4; i++) {
-                ApplyColorLimiter(colorArray[i]);
-            }
-            
-            // For Static mode with 4 colors: Assign one solid color per fan (16 LEDs each)
-            for (int fan = 0; fan < 4; fan++) {
-                SLInfinityColor color = colorArray[fan];
-                
-                // Fill this fan's 16 LEDs with its assigned color (all LEDs same color)
-                // Fan 0 = LEDs 0-15, Fan 1 = LEDs 16-31, Fan 2 = LEDs 32-47, Fan 3 = LEDs 48-63
-                int base_led = fan * 16;
-                for (int led = 0; led < 16; led++) {
-                    int led_idx = (base_led + led) * 3;
-                    led_data[led_idx + 0] = color.r;  // Red
-                    led_data[led_idx + 1] = color.b;  // Blue (RBG format!)
-                    led_data[led_idx + 2] = color.g;  // Green
-                }
-            }
-            
-            // Fill remaining LEDs with black (LEDs 64-79, in case we need 80 LEDs)
-            for (int led = 64; led < 80; led++) {
-                int led_idx = led * 3;
-                led_data[led_idx + 0] = 0x00;  // Red
-                led_data[led_idx + 1] = 0x00;  // Blue
-                led_data[led_idx + 2] = 0x00;  // Green
-            }
-            
-            DEBUG_PRINTF("SetChannelColors: Set 4 fan colors (Fan 1-4, solid per fan) for channel %d: Fan1=%d,%d,%d Fan2=%d,%d,%d Fan3=%d,%d,%d Fan4=%d,%d,%d\n", 
-                         channel,
-                         colorArray[0].r, colorArray[0].g, colorArray[0].b,
-                         colorArray[1].r, colorArray[1].g, colorArray[1].b,
-                         colorArray[2].r, colorArray[2].g, colorArray[2].b,
-                         colorArray[3].r, colorArray[3].g, colorArray[3].b);
-        }
-    } else if (colors.size() == 3) {
-        // Three colors - for ColorCycle mode
-        // Distribute evenly: Each color gets ~21 LEDs
-        SLInfinityColor color0 = colors[0];
-        SLInfinityColor color1 = colors[1];
-        SLInfinityColor color2 = colors[2];
-        ApplyColorLimiter(color0);
-        ApplyColorLimiter(color1);
-        ApplyColorLimiter(color2);
-        
-        // Distribute colors: color0 (0-20), color1 (21-42), color2 (43-63)
-        for (int i = 0; i < 64; i++) {
-            SLInfinityColor color;
-            if (i < 21) {
-                color = color0;
-            } else if (i < 43) {
-                color = color1;
-            } else {
-                color = color2;
-            }
-            
-            int led_idx = i * 3;
-            led_data[led_idx + 0] = color.r;  // Red
-            led_data[led_idx + 1] = color.b;  // Blue (RBG format!)
-            led_data[led_idx + 2] = color.g;  // Green
-        }
-        
-        DEBUG_PRINTF("SetChannelColors: Set 3 colors for channel %d: Color1=%d,%d,%d Color2=%d,%d,%d Color3=%d,%d,%d\n", 
-                     channel,
-                     color0.r, color0.g, color0.b,
-                     color1.r, color1.g, color1.b,
-                     color2.r, color2.g, color2.b);
+        DEBUG_PRINTF("SetChannelColors: Set %zu colors (interleaved 72-byte) for channel %d, brightness=%f\n",
+                     colors.size(), channel, brightness);
     } else {
         // Multiple colors (5+ colors) - distribute them by cycling
         // For Static/Breathing with up to 6 colors, cycle through them

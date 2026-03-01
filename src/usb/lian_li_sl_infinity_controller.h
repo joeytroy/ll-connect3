@@ -37,13 +37,14 @@ enum
     UNIHUB_SLINF_LED_MODE_RUNWAY            = 0x1C,   // Runway mode
     UNIHUB_SLINF_LED_MODE_MIXING            = 0x1E,   // Mixing mode
     UNIHUB_SLINF_LED_MODE_STACK             = 0x20,   // Stack mode
+    UNIHUB_SLINF_LED_MODE_STACK_MULTI_COLOR = 0x21,   // Stack Multi Color mode
     UNIHUB_SLINF_LED_MODE_NEON              = 0x22,   // Neon mode
     UNIHUB_SLINF_LED_MODE_COLOR_CYCLE       = 0x23,   // Color Cycle mode
     UNIHUB_SLINF_LED_MODE_METEOR            = 0x24,   // Meteor mode
     UNIHUB_SLINF_LED_MODE_VOICE             = 0x26,   // Voice mode
-    UNIHUB_SLINF_LED_MODE_GROOVE            = 0x27,   // Groove mode
-    UNIHUB_SLINF_LED_MODE_RENDER            = 0x28,   // Render mode
-    UNIHUB_SLINF_LED_MODE_TUNNEL            = 0x29,   // Tunnel mode
+    UNIHUB_SLINF_LED_MODE_GROOVE            = 0x27,   // Groove mode (2 colors)
+    UNIHUB_SLINF_LED_MODE_RENDER            = 0x28,   // Render mode (4 colors)
+    UNIHUB_SLINF_LED_MODE_TUNNEL            = 0x29,   // Tunnel mode (4 colors)
 };
 
 enum

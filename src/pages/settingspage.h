@@ -12,6 +12,7 @@
 #include <QSpinBox>
 #include <QGroupBox>
 #include <QLineEdit>
+#include <QNetworkAccessManager>
 
 class LightingPage;
 
@@ -50,6 +51,7 @@ private:
     // Behavior settings
     QGroupBox *m_behaviorGroup;
     QCheckBox *m_minimizeOnStartupCheck;
+    QCheckBox *m_checkForUpdatesCheck;
     QComboBox *m_fanTempUnitCombo;
     
     // Fan configuration
@@ -73,6 +75,13 @@ private:
     LightingPage *m_lightingPage;
 
     void writeKernelLoggingFlag(bool enabled);
+
+    // Version check
+    QNetworkAccessManager *m_networkManager;
+    void checkForUpdates(bool silent);
+
+public:
+    void checkForUpdatesOnStartup();
 };
 
 #endif // SETTINGSPAGE_H
