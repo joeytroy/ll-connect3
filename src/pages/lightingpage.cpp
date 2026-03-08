@@ -282,11 +282,20 @@ void LightingPage::setupControls()
         }
         
         #effectCombo::down-arrow {
-            image: none;
-            border-left: 5px solid transparent;
-            border-right: 5px solid transparent;
-            border-top: 5px solid #cccccc;
+            image: url(:/icons/resources/dropdown-arrow.svg);
+            width: 12px;
+            height: 12px;
             margin-right: 8px;
+        }
+        
+        #effectCombo:disabled {
+            background-color: #2a2a2a;
+            color: #666666;
+            border-color: #383838;
+        }
+        
+        #effectCombo::down-arrow:disabled {
+            image: none;
         }
         
         #directionButton {
@@ -335,11 +344,6 @@ void LightingPage::setupControls()
             font-weight: normal;
         }
         
-        #effectCombo:disabled {
-            background-color: #2a2a2a;
-            color: #666666;
-            border-color: #383838;
-        }
         
         #directionButton:disabled {
             background-color: #2a2a2a;
