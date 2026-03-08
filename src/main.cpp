@@ -47,6 +47,9 @@ void customMessageHandler(QtMsgType type, const QMessageLogContext &context, con
 
 int main(int argc, char *argv[])
 {
+    // Must be set before QApplication to avoid portal D-Bus double-registration
+    QApplication::setDesktopFileName("lconnect3");
+    
     // High DPI scaling is enabled by default in Qt6
     QApplication app(argc, argv);
     
@@ -57,7 +60,6 @@ int main(int argc, char *argv[])
     app.setApplicationName("LL-Connect 3");
     app.setApplicationVersion(APP_VERSION_STRING);
     app.setOrganizationName("L-Connect Linux");
-    app.setDesktopFileName("lconnect3");
     app.setWindowIcon(QIcon(":/icons/resources/logo.png"));
     
     // Set dark theme
