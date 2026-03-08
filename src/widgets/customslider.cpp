@@ -46,6 +46,10 @@ void CustomSlider::setupUI()
             font-size: 12px;
             font-weight: bold;
         }
+
+        #sliderLabel:disabled {
+            color: #555555;
+        }
         
         #customSlider {
             background-color: transparent;
@@ -56,6 +60,10 @@ void CustomSlider::setupUI()
             height: 6px;
             border-radius: 3px;
         }
+
+        #customSlider::groove:horizontal:disabled {
+            background-color: #2a2a2a;
+        }
         
         #customSlider::handle:horizontal {
             background-color: #2a82da;
@@ -64,16 +72,28 @@ void CustomSlider::setupUI()
             border-radius: 8px;
             margin: -5px 0;
         }
+
+        #customSlider::handle:horizontal:disabled {
+            background-color: #555555;
+        }
         
         #customSlider::sub-page:horizontal {
             background-color: #2a82da;
             border-radius: 3px;
+        }
+
+        #customSlider::sub-page:horizontal:disabled {
+            background-color: #3a3a3a;
         }
         
         #sliderValue {
             color: #ffffff;
             font-size: 12px;
             font-weight: bold;
+        }
+
+        #sliderValue:disabled {
+            color: #555555;
         }
     )");
 }
