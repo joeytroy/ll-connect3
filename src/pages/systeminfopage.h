@@ -83,6 +83,13 @@ private:
     // Update timer
     QTimer *m_updateTimer;
     
+    // Cached GPU vendor to avoid repeated lspci calls
+    QString m_cachedGPUVendor;
+    bool m_gpuVendorDetected = false;
+    
+    // Counter for staggering heavy (process-based) updates
+    int m_slowUpdateCounter = 0;
+    
     // CPU power monitoring variables
     static qint64 m_prevEnergyUJ;
     static qint64 m_prevTimestamp;

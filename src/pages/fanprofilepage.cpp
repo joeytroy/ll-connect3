@@ -954,26 +954,10 @@ int FanProfilePage::calculateRPMForTemperature(int temperature)
 
 int FanProfilePage::getRealCPUTemperature()
 {
-    // Use the same temperature reading method as System Info page
     int maxTemp = 0;
     
-    // Method 1: Try sensors command first (most accurate) - same as System Info
-    QProcess sensorsProcess;
-    sensorsProcess.start("sensors", QStringList() << "k10temp-pci-00c3");
-    sensorsProcess.waitForFinished(1000);
-    
-    if (sensorsProcess.exitCode() == 0) {
-        QString output = sensorsProcess.readAllStandardOutput();
-        // Look for Tctl temperature (CPU core temperature) - same as System Info
-        QRegularExpression tempRegex("Tctl:\\s*\\+?([0-9.]+)°C");
-        QRegularExpressionMatch match = tempRegex.match(output);
-        if (match.hasMatch()) {
-            maxTemp = static_cast<int>(match.captured(1).toDouble());
-        }
-    }
-    
-    // Method 2: Fallback to hwmon if sensors didn't work - same as System Info
-    if (maxTemp == 0) {
+    // Read CPU temperature from hwmon sysfs (instant, no QProcess)
+    {
         QDir hwmonDir("/sys/class/hwmon");
         QStringList hwmonDirs = hwmonDir.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
         
@@ -1034,8 +1018,29 @@ int FanProfilePage::getRealCPUTemperature()
 
 int FanProfilePage::getRealGPUTemperature()
 {
-    // Lightweight GPU temperature reader, similar to System Info page
-    // Method 1: NVIDIA via nvidia-smi
+    // Read GPU temperature from hwmon sysfs (instant, no QProcess)
+    QDir hwmonDir("/sys/class/hwmon");
+    QStringList hwmonDirs = hwmonDir.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
+    for (const QString &hwmon : hwmonDirs) {
+        QFile nameFile("/sys/class/hwmon/" + hwmon + "/name");
+        if (nameFile.open(QIODevice::ReadOnly)) {
+            QString name = QTextStream(&nameFile).readLine().trimmed();
+            nameFile.close();
+            // NVIDIA (nvidia driver), AMD (amdgpu), or Intel (i915/xe)
+            if (name == "nvidia" || name == "amdgpu" || name == "i915" || name == "xe") {
+                QFile tempFile("/sys/class/hwmon/" + hwmon + "/temp1_input");
+                if (tempFile.open(QIODevice::ReadOnly)) {
+                    int temp = QTextStream(&tempFile).readLine().trimmed().toInt() / 1000;
+                    tempFile.close();
+                    if (temp > 0 && temp < 130) {
+                        return temp;
+                    }
+                }
+            }
+        }
+    }
+    
+    // Fallback for NVIDIA: try nvidia-smi (only runs if hwmon didn't find nvidia)
     QProcess nvidiaProcess;
     nvidiaProcess.start("nvidia-smi", QStringList()
                         << "--query-gpu=temperature.gpu"
@@ -1043,43 +1048,13 @@ int FanProfilePage::getRealGPUTemperature()
     nvidiaProcess.waitForFinished(500);
     if (nvidiaProcess.exitCode() == 0) {
         QString output = QString::fromUtf8(nvidiaProcess.readAllStandardOutput()).trimmed();
-        QString firstLine = output.section('\n', 0, 0).trimmed();
         bool ok = false;
-        int temp = firstLine.toInt(&ok);
+        int temp = output.section('\n', 0, 0).trimmed().toInt(&ok);
         if (ok && temp > 0 && temp < 130) {
             return temp;
         }
     }
     
-    // Method 2: AMD / Intel via sensors (same regex patterns as System Info page)
-    QProcess sensorsProcess;
-    sensorsProcess.start("sensors");
-    sensorsProcess.waitForFinished(1000);
-    if (sensorsProcess.exitCode() == 0) {
-        QString output = QString::fromUtf8(sensorsProcess.readAllStandardOutput());
-        
-        // AMD GPU temperature
-        QRegularExpression amdRegex("amdgpu.*?temp1:\\s*\\+?([0-9.]+)°C");
-        QRegularExpressionMatch amdMatch = amdRegex.match(output);
-        if (amdMatch.hasMatch()) {
-            int temp = static_cast<int>(amdMatch.captured(1).toDouble());
-            if (temp > 0 && temp < 130) {
-                return temp;
-            }
-        }
-        
-        // Intel GPU temperature
-        QRegularExpression intelRegex("i915.*?temp1:\\s*\\+?([0-9.]+)°C");
-        QRegularExpressionMatch intelMatch = intelRegex.match(output);
-        if (intelMatch.hasMatch()) {
-            int temp = static_cast<int>(intelMatch.captured(1).toDouble());
-            if (temp > 0 && temp < 130) {
-                return temp;
-            }
-        }
-    }
-    
-    // Fallback: GPU temperature unavailable
     return -1;
 }
 

@@ -423,12 +423,22 @@ void SystemInfoPage::createMonitoringCards()
 
 void SystemInfoPage::updateSystemInfo()
 {
-    // Get real system data
+    // Fast file-based updates every tick (instant, no QProcess)
     updateCPUInfo();
-    updateGPUInfo();
     updateRAMInfo();
     updateNetworkInfo();
-    updateStorageInfo();
+    
+    // GPU info uses external processes (nvidia-smi etc.) — update every 3 seconds
+    if (m_slowUpdateCounter % 3 == 0) {
+        updateGPUInfo();
+    }
+    
+    // Storage uses df — update every 10 seconds
+    if (m_slowUpdateCounter % 10 == 0) {
+        updateStorageInfo();
+    }
+    
+    m_slowUpdateCounter++;
 }
 
 void SystemInfoPage::updateCPUInfo()
@@ -478,24 +488,9 @@ void SystemInfoPage::updateCPUInfo()
         statFile.close();
     }
     
-    // CPU Temperature - try sensors command first (most accurate)
+    // CPU Temperature from hwmon sysfs (instant, no QProcess needed)
     int maxTemp = 0;
-    QProcess sensorsProcess;
-    sensorsProcess.start("sensors", QStringList() << "k10temp-pci-00c3");
-    sensorsProcess.waitForFinished(1000);
-    
-    if (sensorsProcess.exitCode() == 0) {
-        QString output = sensorsProcess.readAllStandardOutput();
-        // Look for Tctl temperature (CPU core temperature)
-        QRegularExpression tempRegex("Tctl:\\s*\\+?([0-9.]+)°C");
-        QRegularExpressionMatch match = tempRegex.match(output);
-        if (match.hasMatch()) {
-            maxTemp = static_cast<int>(match.captured(1).toDouble());
-        }
-    }
-    
-    // Fallback: try hwmon if sensors didn't work
-    if (maxTemp == 0) {
+    {
         QDir hwmonDir("/sys/class/hwmon");
         QStringList hwmonDirs = hwmonDir.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
         
@@ -644,28 +639,8 @@ void SystemInfoPage::updateCPUPowerAndVoltage()
     }
     
     if (!foundRAPL) {
-        // Try alternative power monitoring methods
-        // Check if we can use sensors command as fallback
-        QProcess sensorsProcess;
-        sensorsProcess.start("sensors", QStringList() << "-A");
-        sensorsProcess.waitForFinished(1000);
-        
-        if (sensorsProcess.exitCode() == 0) {
-            QString output = sensorsProcess.readAllStandardOutput();
-            // Look for power readings in sensors output
-            QRegularExpression powerRegex("P\\w*:\\s*([0-9.]+)\\s*W");
-            QRegularExpressionMatch match = powerRegex.match(output);
-            if (match.hasMatch()) {
-                double powerW = match.captured(1).toDouble();
-                if (powerW > 0 && powerW <= 500) {
-                    m_cpuPowerCard->setValue(QString::number(powerW, 'f', 1) + " W");
-                    foundRAPL = true;
-                }
-            }
-        }
-        
         // Try to estimate power from CPU frequency and load (very rough approximation)
-        if (!foundRAPL) {
+        {
             // This is a very rough estimation - not accurate but better than N/A
             // Get CPU frequency from /proc/cpuinfo
             QFile cpuFile("/proc/cpuinfo");
@@ -743,27 +718,8 @@ void SystemInfoPage::updateCPUPowerAndVoltage()
     
     // Try alternative voltage sources if hwmon didn't work
     if (!voltageFound) {
-        // Try sensors command as fallback
-        QProcess sensorsProcess;
-        sensorsProcess.start("sensors", QStringList() << "-A");
-        sensorsProcess.waitForFinished(1000);
-        
-        if (sensorsProcess.exitCode() == 0) {
-            QString output = sensorsProcess.readAllStandardOutput();
-            // Look for voltage readings in sensors output
-            QRegularExpression voltageRegex("V\\w*:\\s*([0-9.]+)\\s*V");
-            QRegularExpressionMatch match = voltageRegex.match(output);
-            if (match.hasMatch()) {
-                double voltage = match.captured(1).toDouble();
-                if (voltage > 0.5 && voltage < 2.0) {
-                    m_cpuVoltageCard->setValue(QString::number(voltage, 'f', 3) + " V");
-                    voltageFound = true;
-                }
-            }
-        }
-        
         // Try to get voltage from /proc/cpuinfo or other sources
-        if (!voltageFound) {
+        {
             QFile cpuFile("/proc/cpuinfo");
             if (cpuFile.open(QIODevice::ReadOnly)) {
                 QTextStream stream(&cpuFile);
@@ -877,45 +833,40 @@ void SystemInfoPage::updateGPUInfo()
 
 GPUInfo SystemInfoPage::detectGPU()
 {
-    // First, try to detect GPU type from lspci - scan all devices
-    QProcess lspciProcess;
-    lspciProcess.start("lspci", QStringList() << "-n");
-    lspciProcess.waitForFinished(1000);
-    
-    QString gpuVendor = "Unknown";
-    QString gpuModel = "Unknown";
-    
-    if (lspciProcess.exitCode() == 0) {
-        QString output = lspciProcess.readAllStandardOutput();
-        QStringList lines = output.split('\n', Qt::SkipEmptyParts);
+    // Detect GPU vendor once via lspci, then cache the result
+    if (!m_gpuVendorDetected) {
+        QProcess lspciProcess;
+        lspciProcess.start("lspci", QStringList() << "-n");
+        lspciProcess.waitForFinished(2000);
         
-        for (const QString &line : lines) {
-            if (line.contains("0300")) { // VGA compatible controller
-                // Parse line like: "41:00.0 0300: 10de:2684 (rev a1)"
-                // Look for pattern: "10de:2684"
-                QRegularExpression pciRegex("(10de|1002|1022|8086):([0-9a-fA-F]+)");
-                QRegularExpressionMatch match = pciRegex.match(line);
-                if (match.hasMatch()) {
-                    QString vendorId = match.captured(1);
-                    QString deviceId = match.captured(2);
-                    
-                    // Detect vendor by PCI ID
-                    if (vendorId == "10de") {
-                        gpuVendor = "NVIDIA";
-                        return detectNVIDIAGPU();
-                    } else if (vendorId == "1002" || vendorId == "1022") {
-                        gpuVendor = "AMD";
-                        return detectAMDGPU();
-                    } else if (vendorId == "8086") {
-                        gpuVendor = "Intel";
-                        return detectIntelGPU();
+        if (lspciProcess.exitCode() == 0) {
+            QString output = lspciProcess.readAllStandardOutput();
+            QStringList lines = output.split('\n', Qt::SkipEmptyParts);
+            
+            for (const QString &line : lines) {
+                if (line.contains("0300")) {
+                    QRegularExpression pciRegex("(10de|1002|1022|8086):([0-9a-fA-F]+)");
+                    QRegularExpressionMatch match = pciRegex.match(line);
+                    if (match.hasMatch()) {
+                        QString vendorId = match.captured(1);
+                        if (vendorId == "10de") {
+                            m_cachedGPUVendor = "NVIDIA";
+                        } else if (vendorId == "1002" || vendorId == "1022") {
+                            m_cachedGPUVendor = "AMD";
+                        } else if (vendorId == "8086") {
+                            m_cachedGPUVendor = "Intel";
+                        }
+                        break;
                     }
                 }
             }
         }
+        m_gpuVendorDetected = true;
     }
     
-    // Fallback to generic detection
+    if (m_cachedGPUVendor == "NVIDIA") return detectNVIDIAGPU();
+    if (m_cachedGPUVendor == "AMD") return detectAMDGPU();
+    if (m_cachedGPUVendor == "Intel") return detectIntelGPU();
     return detectGenericGPU();
 }
 
@@ -986,53 +937,81 @@ GPUInfo SystemInfoPage::detectAMDGPU()
     info.memoryUsed = -1;
     info.memoryTotal = -1;
     
-    // Try radeontop if available
-    QProcess radeontopProcess;
-    radeontopProcess.start("radeontop", QStringList() << "-d" << "1" << "-l" << "1");
-    radeontopProcess.waitForFinished(1000);
-    
-    if (radeontopProcess.exitCode() == 0) {
-        QString output = radeontopProcess.readAllStandardOutput();
-        // Parse radeontop output for GPU utilization
-        QRegularExpression loadRegex("gpu\\s+(\\d+)%");
-        QRegularExpressionMatch match = loadRegex.match(output);
-        if (match.hasMatch()) {
-            info.load = match.captured(1).toInt();
-        }
-    }
-    
-    // Try sensors for temperature
-    QProcess sensorsProcess;
-    sensorsProcess.start("sensors", QStringList() << "-A");
-    sensorsProcess.waitForFinished(1000);
-    
-    if (sensorsProcess.exitCode() == 0) {
-        QString output = sensorsProcess.readAllStandardOutput();
-        // Look for AMD GPU temperature
-        QRegularExpression tempRegex("amdgpu.*?temp1:\\s*\\+?([0-9.]+)°C");
-        QRegularExpressionMatch match = tempRegex.match(output);
-        if (match.hasMatch()) {
-            info.temperature = static_cast<int>(match.captured(1).toDouble());
-        }
-    }
-    
-    // Try /sys/class/drm for basic info
+    // Read GPU utilization from sysfs (instant, no QProcess)
     QDir drmDir("/sys/class/drm");
     QStringList cards = drmDir.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
     
     for (const QString &card : cards) {
         if (card.startsWith("card") && !card.contains("-")) {
-            QFile ueventFile("/sys/class/drm/" + card + "/device/uevent");
+            QString cardPath = "/sys/class/drm/" + card + "/device/";
+            QFile ueventFile(cardPath + "uevent");
             if (ueventFile.open(QIODevice::ReadOnly)) {
                 QTextStream stream(&ueventFile);
                 QString line;
+                bool isAMD = false;
                 while (stream.readLineInto(&line)) {
                     if (line.startsWith("DRIVER=amdgpu")) {
                         info.model = "AMD (amdgpu)";
+                        isAMD = true;
                         break;
                     }
                 }
                 ueventFile.close();
+                
+                if (isAMD) {
+                    // GPU busy percentage from sysfs
+                    QFile busyFile(cardPath + "gpu_busy_percent");
+                    if (busyFile.open(QIODevice::ReadOnly)) {
+                        info.load = QTextStream(&busyFile).readLine().trimmed().toInt();
+                        busyFile.close();
+                    }
+                    // VRAM usage from sysfs (amdgpu exposes these)
+                    QFile vramTotalFile(cardPath + "mem_info_vram_total");
+                    if (vramTotalFile.open(QIODevice::ReadOnly)) {
+                        qint64 totalBytes = QTextStream(&vramTotalFile).readLine().trimmed().toLongLong();
+                        if (totalBytes > 0) info.memoryTotal = static_cast<int>(totalBytes / (1024 * 1024));
+                        vramTotalFile.close();
+                    }
+                    QFile vramUsedFile(cardPath + "mem_info_vram_used");
+                    if (vramUsedFile.open(QIODevice::ReadOnly)) {
+                        qint64 usedBytes = QTextStream(&vramUsedFile).readLine().trimmed().toLongLong();
+                        if (usedBytes >= 0) info.memoryUsed = static_cast<int>(usedBytes / (1024 * 1024));
+                        vramUsedFile.close();
+                    }
+                    break;
+                }
+            }
+        }
+    }
+    
+    // Read GPU temperature from hwmon (amdgpu driver exposes temp via hwmon)
+    QDir hwmonDir("/sys/class/hwmon");
+    QStringList hwmonDirs = hwmonDir.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
+    for (const QString &hwmon : hwmonDirs) {
+        QFile nameFile("/sys/class/hwmon/" + hwmon + "/name");
+        if (nameFile.open(QIODevice::ReadOnly)) {
+            QString name = QTextStream(&nameFile).readLine().trimmed();
+            nameFile.close();
+            if (name == "amdgpu") {
+                QFile tempFile("/sys/class/hwmon/" + hwmon + "/temp1_input");
+                if (tempFile.open(QIODevice::ReadOnly)) {
+                    int temp = QTextStream(&tempFile).readLine().trimmed().toInt() / 1000;
+                    if (temp > 0 && temp < 200) info.temperature = temp;
+                    tempFile.close();
+                }
+                QFile powerFile("/sys/class/hwmon/" + hwmon + "/power1_average");
+                if (powerFile.open(QIODevice::ReadOnly)) {
+                    double powerUW = QTextStream(&powerFile).readLine().trimmed().toDouble();
+                    if (powerUW > 0) info.power = powerUW / 1000000.0;
+                    powerFile.close();
+                }
+                QFile freqFile("/sys/class/hwmon/" + hwmon + "/freq1_input");
+                if (freqFile.open(QIODevice::ReadOnly)) {
+                    double freqHz = QTextStream(&freqFile).readLine().trimmed().toDouble();
+                    if (freqHz > 0) info.clockRate = static_cast<int>(freqHz / 1000000.0);
+                    freqFile.close();
+                }
+                break;
             }
         }
     }
@@ -1047,53 +1026,56 @@ GPUInfo SystemInfoPage::detectIntelGPU()
     info.memoryUsed = -1;
     info.memoryTotal = -1;
     
-    // Try intel_gpu_top if available
-    QProcess intelProcess;
-    intelProcess.start("intel_gpu_top", QStringList() << "-s" << "1");
-    intelProcess.waitForFinished(1000);
-    
-    if (intelProcess.exitCode() == 0) {
-        QString output = intelProcess.readAllStandardOutput();
-        // Parse intel_gpu_top output for GPU utilization
-        QRegularExpression loadRegex("GPU\\s+(\\d+)%");
-        QRegularExpressionMatch match = loadRegex.match(output);
-        if (match.hasMatch()) {
-            info.load = match.captured(1).toInt();
-        }
-    }
-    
-    // Try sensors for temperature
-    QProcess sensorsProcess;
-    sensorsProcess.start("sensors", QStringList() << "-A");
-    sensorsProcess.waitForFinished(1000);
-    
-    if (sensorsProcess.exitCode() == 0) {
-        QString output = sensorsProcess.readAllStandardOutput();
-        // Look for Intel GPU temperature
-        QRegularExpression tempRegex("i915.*?temp1:\\s*\\+?([0-9.]+)°C");
-        QRegularExpressionMatch match = tempRegex.match(output);
-        if (match.hasMatch()) {
-            info.temperature = static_cast<int>(match.captured(1).toDouble());
-        }
-    }
-    
-    // Try /sys/class/drm for basic info
+    // Read from /sys/class/drm for basic info and utilization
     QDir drmDir("/sys/class/drm");
     QStringList cards = drmDir.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
     
     for (const QString &card : cards) {
         if (card.startsWith("card") && !card.contains("-")) {
-            QFile ueventFile("/sys/class/drm/" + card + "/device/uevent");
+            QString cardPath = "/sys/class/drm/" + card + "/device/";
+            QFile ueventFile(cardPath + "uevent");
             if (ueventFile.open(QIODevice::ReadOnly)) {
                 QTextStream stream(&ueventFile);
                 QString line;
                 while (stream.readLineInto(&line)) {
-                    if (line.startsWith("DRIVER=i915")) {
-                        info.model = "Intel (i915)";
+                    if (line.startsWith("DRIVER=i915") || line.startsWith("DRIVER=xe")) {
+                        info.model = "Intel (" + line.split('=')[1] + ")";
                         break;
                     }
                 }
                 ueventFile.close();
+            }
+        }
+    }
+    
+    // Read Intel GPU temperature from hwmon (i915 driver exposes temp via hwmon)
+    QDir hwmonDir("/sys/class/hwmon");
+    QStringList hwmonDirs = hwmonDir.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
+    for (const QString &hwmon : hwmonDirs) {
+        QFile nameFile("/sys/class/hwmon/" + hwmon + "/name");
+        if (nameFile.open(QIODevice::ReadOnly)) {
+            QString name = QTextStream(&nameFile).readLine().trimmed();
+            nameFile.close();
+            if (name == "i915" || name == "xe") {
+                QFile tempFile("/sys/class/hwmon/" + hwmon + "/temp1_input");
+                if (tempFile.open(QIODevice::ReadOnly)) {
+                    int temp = QTextStream(&tempFile).readLine().trimmed().toInt() / 1000;
+                    if (temp > 0 && temp < 200) info.temperature = temp;
+                    tempFile.close();
+                }
+                QFile powerFile("/sys/class/hwmon/" + hwmon + "/power1_average");
+                if (powerFile.open(QIODevice::ReadOnly)) {
+                    double powerUW = QTextStream(&powerFile).readLine().trimmed().toDouble();
+                    if (powerUW > 0) info.power = powerUW / 1000000.0;
+                    powerFile.close();
+                }
+                QFile freqFile("/sys/class/hwmon/" + hwmon + "/freq1_input");
+                if (freqFile.open(QIODevice::ReadOnly)) {
+                    double freqHz = QTextStream(&freqFile).readLine().trimmed().toDouble();
+                    if (freqHz > 0) info.clockRate = static_cast<int>(freqHz / 1000000.0);
+                    freqFile.close();
+                }
+                break;
             }
         }
     }
