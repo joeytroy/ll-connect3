@@ -9,5 +9,6 @@ Icon=lconnect3
 Terminal=false
 Categories=System;Settings;HardwareSettings;
 StartupNotify=true
+StartupWMClass=LLConnect3
 Keywords=fan;cooling;lian li;rgb;controller;
 

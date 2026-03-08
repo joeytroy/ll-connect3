@@ -57,6 +57,7 @@ int main(int argc, char *argv[])
     app.setApplicationName("LL-Connect 3");
     app.setApplicationVersion(APP_VERSION_STRING);
     app.setOrganizationName("L-Connect Linux");
+    app.setDesktopFileName("lconnect3");
     app.setWindowIcon(QIcon(":/icons/resources/logo.png"));
     
     // Set dark theme
