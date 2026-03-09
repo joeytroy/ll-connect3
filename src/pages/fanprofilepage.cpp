@@ -1018,43 +1018,60 @@ int FanProfilePage::getRealCPUTemperature()
 
 int FanProfilePage::getRealGPUTemperature()
 {
-    // Read GPU temperature from hwmon sysfs (instant, no QProcess)
     QDir hwmonDir("/sys/class/hwmon");
     QStringList hwmonDirs = hwmonDir.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
+
+    auto readHwmonTemp = [&](const QString &hwmon) -> int {
+        QFile tempFile("/sys/class/hwmon/" + hwmon + "/temp1_input");
+        if (tempFile.open(QIODevice::ReadOnly)) {
+            int temp = QTextStream(&tempFile).readLine().trimmed().toInt() / 1000;
+            tempFile.close();
+            if (temp > 0 && temp < 130) return temp;
+        }
+        return -1;
+    };
+
+    // Pass 1: discrete GPUs only (nvidia, amdgpu) — never pick iGPU on hybrid systems
     for (const QString &hwmon : hwmonDirs) {
         QFile nameFile("/sys/class/hwmon/" + hwmon + "/name");
         if (nameFile.open(QIODevice::ReadOnly)) {
             QString name = QTextStream(&nameFile).readLine().trimmed();
             nameFile.close();
-            // NVIDIA (nvidia driver), AMD (amdgpu), or Intel (i915/xe)
-            if (name == "nvidia" || name == "amdgpu" || name == "i915" || name == "xe") {
-                QFile tempFile("/sys/class/hwmon/" + hwmon + "/temp1_input");
-                if (tempFile.open(QIODevice::ReadOnly)) {
-                    int temp = QTextStream(&tempFile).readLine().trimmed().toInt() / 1000;
-                    tempFile.close();
-                    if (temp > 0 && temp < 130) {
-                        return temp;
-                    }
-                }
+            if (name == "nvidia" || name == "amdgpu") {
+                int temp = readHwmonTemp(hwmon);
+                if (temp > 0) return temp;
             }
         }
     }
-    
-    // Fallback for NVIDIA: try nvidia-smi (only runs if hwmon didn't find nvidia)
-    QProcess nvidiaProcess;
-    nvidiaProcess.start("nvidia-smi", QStringList()
-                        << "--query-gpu=temperature.gpu"
-                        << "--format=csv,noheader,nounits");
-    nvidiaProcess.waitForFinished(500);
-    if (nvidiaProcess.exitCode() == 0) {
-        QString output = QString::fromUtf8(nvidiaProcess.readAllStandardOutput()).trimmed();
-        bool ok = false;
-        int temp = output.section('\n', 0, 0).trimmed().toInt(&ok);
-        if (ok && temp > 0 && temp < 130) {
-            return temp;
+
+    // Fallback for NVIDIA without hwmon entry: try nvidia-smi
+    {
+        QProcess nvidiaProcess;
+        nvidiaProcess.start("nvidia-smi", QStringList()
+                            << "--query-gpu=temperature.gpu"
+                            << "--format=csv,noheader,nounits");
+        nvidiaProcess.waitForFinished(500);
+        if (nvidiaProcess.exitCode() == 0) {
+            bool ok = false;
+            int temp = QString::fromUtf8(nvidiaProcess.readAllStandardOutput())
+                           .section('\n', 0, 0).trimmed().toInt(&ok);
+            if (ok && temp > 0 && temp < 130) return temp;
         }
     }
-    
+
+    // Pass 2: iGPU only (i915, xe) — reached when no discrete GPU was found
+    for (const QString &hwmon : hwmonDirs) {
+        QFile nameFile("/sys/class/hwmon/" + hwmon + "/name");
+        if (nameFile.open(QIODevice::ReadOnly)) {
+            QString name = QTextStream(&nameFile).readLine().trimmed();
+            nameFile.close();
+            if (name == "i915" || name == "xe") {
+                int temp = readHwmonTemp(hwmon);
+                if (temp > 0) return temp;
+            }
+        }
+    }
+
     return -1;
 }
 
