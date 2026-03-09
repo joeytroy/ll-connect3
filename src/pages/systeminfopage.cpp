@@ -1026,6 +1026,36 @@ GPUInfo SystemInfoPage::detectIntelGPU()
     info.memoryUsed = -1;
     info.memoryTotal = -1;
     
+    // Try intel_gpu_top if available
+    QProcess intelProcess;
+    intelProcess.start("intel_gpu_top", QStringList() << "-s" << "1");
+    intelProcess.waitForFinished(1000);
+    
+    if (intelProcess.exitCode() == 0) {
+        QString output = intelProcess.readAllStandardOutput();
+        // Parse intel_gpu_top output for GPU utilization
+        QRegularExpression loadRegex("GPU\\s+(\\d+)%");
+        QRegularExpressionMatch match = loadRegex.match(output);
+        if (match.hasMatch()) {
+            info.load = match.captured(1).toInt();
+        }
+    }
+    
+    // Try sensors for temperature
+    QProcess sensorsProcess;
+    sensorsProcess.start("sensors", QStringList() << "-A");
+    sensorsProcess.waitForFinished(1000);
+    
+    if (sensorsProcess.exitCode() == 0) {
+        QString output = sensorsProcess.readAllStandardOutput();
+        // Look for Intel GPU temperature
+        QRegularExpression tempRegex("i915.*?temp1:\\s*\\+?([0-9.]+)°C");
+        QRegularExpressionMatch match = tempRegex.match(output);
+        if (match.hasMatch()) {
+            info.temperature = static_cast<int>(match.captured(1).toDouble());
+        }
+    }
+
     // Read from /sys/class/drm for basic info and utilization
     QDir drmDir("/sys/class/drm");
     QStringList cards = drmDir.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
@@ -1033,13 +1063,14 @@ GPUInfo SystemInfoPage::detectIntelGPU()
     for (const QString &card : cards) {
         if (card.startsWith("card") && !card.contains("-")) {
             QString cardPath = "/sys/class/drm/" + card + "/device/";
-            QFile ueventFile(cardPath + "uevent");
+            QFile ueventFile("/sys/class/drm/" + card + "/device/uevent");
+
             if (ueventFile.open(QIODevice::ReadOnly)) {
                 QTextStream stream(&ueventFile);
                 QString line;
                 while (stream.readLineInto(&line)) {
-                    if (line.startsWith("DRIVER=i915") || line.startsWith("DRIVER=xe")) {
-                        info.model = "Intel (" + line.split('=')[1] + ")";
+                    if (line.startsWith("DRIVER=i915")) {
+                        info.model = "Intel (i915)";
                         break;
                     }
                 }
@@ -1047,7 +1078,6 @@ GPUInfo SystemInfoPage::detectIntelGPU()
             }
         }
     }
-    
     // Read Intel GPU temperature from hwmon (i915 driver exposes temp via hwmon)
     QDir hwmonDir("/sys/class/hwmon");
     QStringList hwmonDirs = hwmonDir.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
