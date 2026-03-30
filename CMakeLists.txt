@@ -71,6 +71,7 @@ set(SOURCES
     src/widgets/fanwidget.cpp
     src/widgets/fancurvewidget.cpp
     src/widgets/monitoringcard.cpp
+    src/widgets/toggleswitch.cpp
     src/widgets/customslider.cpp
     src/widgets/fanlightingwidget.cpp
     src/utils/debugutil.cpp
@@ -87,6 +88,7 @@ set(HEADERS
     src/widgets/fanwidget.h
     src/widgets/fancurvewidget.h
     src/widgets/monitoringcard.h
+    src/widgets/toggleswitch.h
     src/widgets/customslider.h
     src/widgets/fanlightingwidget.h
 )

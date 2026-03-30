@@ -1,5 +1,6 @@
 #include "lightingpage.h"
 #include "widgets/customslider.h"
+#include "widgets/toggleswitch.h"
 #include "lian_li_qt_integration.h"
 #include "utils/qtdebugutil.h"
 #include <QFont>
@@ -19,6 +20,7 @@ LightingPage::LightingPage(QWidget *parent)
     , m_directionLeft(false)
     , m_selectedPort(-1)
     , m_isLoading(false)
+    , m_lightingEnabled(true)
     , m_lianLi(nullptr)
 {
     // Initialize port colors (2D array: [port][color_index])
@@ -66,6 +68,28 @@ void LightingPage::setupUI()
     m_mainLayout->setContentsMargins(20, 20, 20, 20);
     m_mainLayout->setSpacing(20);
     
+    // Header with lighting toggle
+    QHBoxLayout *headerLayout = new QHBoxLayout();
+    headerLayout->setContentsMargins(0, 0, 0, 0);
+    
+    QLabel *titleLabel = new QLabel("Lighting Control");
+    titleLabel->setStyleSheet("color: #ffffff; font-size: 18px; font-weight: bold;");
+    
+    m_lightingToggle = new ToggleSwitch();
+    m_lightingToggle->setChecked(true);
+    connect(m_lightingToggle, &ToggleSwitch::toggled, this, &LightingPage::onLightingToggled);
+    
+    m_lightingStatusLabel = new QLabel("ON");
+    m_lightingStatusLabel->setFixedWidth(30);
+    m_lightingStatusLabel->setStyleSheet("color: #cccccc; font-size: 13px; font-weight: bold;");
+    
+    headerLayout->addWidget(titleLabel);
+    headerLayout->addStretch();
+    headerLayout->addWidget(m_lightingToggle);
+    headerLayout->addWidget(m_lightingStatusLabel);
+    
+    m_mainLayout->addLayout(headerLayout);
+    
     // Content layout
     m_contentLayout = new QHBoxLayout();
     m_contentLayout->setSpacing(30);
@@ -74,7 +98,7 @@ void LightingPage::setupUI()
     m_rightLayout = new QVBoxLayout();
     
     m_contentLayout->addLayout(m_leftLayout, 1);
-    m_contentLayout->addLayout(m_rightLayout, 1);  // Changed from 2 to 1 for equal sizing
+    m_contentLayout->addLayout(m_rightLayout, 1);
     
     m_mainLayout->addLayout(m_contentLayout);
 }
@@ -258,11 +282,20 @@ void LightingPage::setupControls()
         }
         
         #effectCombo::down-arrow {
-            image: none;
-            border-left: 5px solid transparent;
-            border-right: 5px solid transparent;
-            border-top: 5px solid #cccccc;
+            image: url(:/icons/resources/dropdown-arrow.svg);
+            width: 12px;
+            height: 12px;
             margin-right: 8px;
+        }
+        
+        #effectCombo:disabled {
+            background-color: #2a2a2a;
+            color: #666666;
+            border-color: #383838;
+        }
+        
+        #effectCombo::down-arrow:disabled {
+            image: none;
         }
         
         #directionButton {
@@ -309,6 +342,31 @@ void LightingPage::setupControls()
             color: #cccccc;
             font-size: 11px;
             font-weight: normal;
+        }
+        
+        
+        #directionButton:disabled {
+            background-color: #2a2a2a;
+            color: #555555;
+            border-color: #383838;
+        }
+        
+        #applyButton:disabled {
+            background-color: #2a2a2a;
+            color: #555555;
+        }
+        
+        #colorButton:disabled {
+            border-color: #383838;
+            background-color: #2a2a2a;
+        }
+        
+        #controlLabel:disabled {
+            color: #555555;
+        }
+        
+        #portLabel:disabled {
+            color: #555555;
         }
     )");
 }
@@ -461,8 +519,30 @@ void LightingPage::onApply()
     saveLightingSettings();
 }
 
+void LightingPage::onLightingToggled(bool enabled)
+{
+    m_lightingEnabled = enabled;
+    m_lightingStatusLabel->setText(enabled ? "ON" : "OFF");
+    
+    // Enable/disable all lighting controls
+    m_effectCombo->setEnabled(enabled);
+    m_speedSlider->setEnabled(enabled);
+    m_brightnessSlider->setEnabled(enabled);
+    m_directionWidget->setEnabled(enabled);
+    m_staticColorWidget->setEnabled(enabled);
+    m_applyBtn->setEnabled(enabled);
+    
+    saveLightingSettings();
+    
+    if (enabled && m_lianLi && m_lianLi->isConnected()) {
+        applyCurrentEffect();
+    }
+}
+
 void LightingPage::applyCurrentEffect()
 {
+    if (!m_lightingEnabled) return;
+    
     if (!m_lianLi || !m_lianLi->isConnected()) {
         DEBUG_LOG("Device not connected - cannot apply lighting");
         return;
@@ -615,6 +695,7 @@ void LightingPage::applyCurrentEffect()
 void LightingPage::onDeviceConnected()
 {
     DEBUG_LOG("Lian Li device connected");
+    if (!m_lightingEnabled) return;
     applyCurrentEffect();
 }
 
@@ -679,6 +760,7 @@ void LightingPage::saveLightingSettings()
     QSettings settings("LConnect3", "Lighting");
     
     // Save basic settings
+    settings.setValue("LightingEnabled", m_lightingEnabled);
     settings.setValue("Effect", m_currentEffect);
     settings.setValue("Speed", m_currentSpeed);
     settings.setValue("Brightness", m_currentBrightness);
@@ -713,6 +795,7 @@ void LightingPage::loadLightingSettings()
 
     QSettings settings("LConnect3", "Lighting");
 
+    m_lightingEnabled = settings.value("LightingEnabled", true).toBool();
     m_currentEffect = settings.value("Effect", "Rainbow Wave").toString();
     m_currentSpeed = settings.value("Speed", 75).toInt();
     m_currentBrightness = settings.value("Brightness", 100).toInt();
@@ -771,6 +854,19 @@ void LightingPage::loadLightingSettings()
         updateColorButton(i);
     }
 
+    // Update lighting toggle state
+    m_lightingToggle->blockSignals(true);
+    m_lightingToggle->setChecked(m_lightingEnabled);
+    m_lightingToggle->blockSignals(false);
+    m_lightingStatusLabel->setText(m_lightingEnabled ? "ON" : "OFF");
+    
+    m_effectCombo->setEnabled(m_lightingEnabled);
+    m_speedSlider->setEnabled(m_lightingEnabled);
+    m_brightnessSlider->setEnabled(m_lightingEnabled);
+    m_directionWidget->setEnabled(m_lightingEnabled);
+    m_staticColorWidget->setEnabled(m_lightingEnabled);
+    m_applyBtn->setEnabled(m_lightingEnabled);
+
     m_isLoading = false;
 
     updateEffectUI();
@@ -791,6 +887,19 @@ void LightingPage::resetToDefaults()
     m_currentBrightness = 100;
     m_directionLeft = false;
     m_selectedPort = -1;
+    m_lightingEnabled = true;
+
+    m_lightingToggle->blockSignals(true);
+    m_lightingToggle->setChecked(true);
+    m_lightingToggle->blockSignals(false);
+    m_lightingStatusLabel->setText("ON");
+
+    m_effectCombo->setEnabled(true);
+    m_speedSlider->setEnabled(true);
+    m_brightnessSlider->setEnabled(true);
+    m_directionWidget->setEnabled(true);
+    m_staticColorWidget->setEnabled(true);
+    m_applyBtn->setEnabled(true);
 
     m_effectCombo->blockSignals(true);
     m_effectCombo->setCurrentText(m_currentEffect);
@@ -928,3 +1037,4 @@ void LightingPage::loadEffectColors(const QString &effectName)
         updateColorButton(i);
     }
 }
+

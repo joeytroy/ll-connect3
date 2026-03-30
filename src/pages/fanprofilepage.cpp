@@ -249,13 +249,11 @@ void FanProfilePage::setupFanTable()
             }
             QComboBox::drop-down {
                 border: none;
-                width: 20px;
             }
             QComboBox::down-arrow {
-                image: none;
-                border-left: 4px solid transparent;
-                border-right: 4px solid transparent;
-                border-top: 5px solid white;
+                image: url(:/icons/resources/dropdown-arrow.svg);
+                width: 10px;
+                height: 10px;
                 margin-right: 5px;
             }
             QComboBox QAbstractItemView {
@@ -312,6 +310,16 @@ void FanProfilePage::setupFanTable()
             border-radius: 4px;
             padding: 2px;
             font-size: 11px;
+        }
+        
+        QComboBox::drop-down {
+            border: none;
+        }
+        
+        QComboBox::down-arrow {
+            image: url(:/icons/resources/dropdown-arrow.svg);
+            width: 10px;
+            height: 10px;
         }
     )");
 }

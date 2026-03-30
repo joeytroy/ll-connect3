@@ -2,5 +2,6 @@
 <RCC version="1.0">
     <qresource prefix="/icons">
         <file>resources/logo.png</file>
+        <file>resources/dropdown-arrow.svg</file>
     </qresource>
 </RCC>

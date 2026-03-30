@@ -9,10 +9,10 @@
 #include <QComboBox>
 #include <QSlider>
 #include <QGroupBox>
-#include <QCheckBox>
 
 class CustomSlider;
 class LianLiQtIntegration;
+class ToggleSwitch;
 
 class LightingPage : public QWidget
 {
@@ -34,6 +34,7 @@ private slots:
     void onDeviceConnected();
     void onDeviceDisconnected();
     void onColorButtonClicked();
+    void onLightingToggled(bool enabled);
 
 private:
     void setupUI();
@@ -79,6 +80,10 @@ private:
     
     QPushButton *m_applyBtn;
     
+    // Lighting toggle
+    ToggleSwitch *m_lightingToggle;
+    QLabel *m_lightingStatusLabel;
+    bool m_lightingEnabled;
     
     // Current settings
     QString m_currentEffect;
