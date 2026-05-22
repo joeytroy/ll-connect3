@@ -10,6 +10,12 @@
 #include <QDesktopServices>
 #include <QUrl>
 #include <QVersionNumber>
+#include <QFileDialog>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonValue>
+#include <QStandardPaths>
+#include <QDateTime>
 
 SettingsPage::SettingsPage(QWidget *parent)
     : QWidget(parent)
@@ -324,12 +330,25 @@ void SettingsPage::setupFanConfiguration()
     fanLayout->addWidget(infoLabel);
     
     m_rightLayout->addWidget(m_fanConfigGroup);
-    
+
+    // Import / Export buttons
+    m_exportBtn = new QPushButton("Export Settings…");
+    m_exportBtn->setObjectName("actionButton");
+    m_exportBtn->setToolTip("Save fan curves, colors, profiles and other settings to a file");
+    connect(m_exportBtn, &QPushButton::clicked, this, &SettingsPage::onExportSettings);
+    m_rightLayout->addWidget(m_exportBtn);
+
+    m_importBtn = new QPushButton("Import Settings…");
+    m_importBtn->setObjectName("actionButton");
+    m_importBtn->setToolTip("Restore fan curves, colors, profiles and other settings from a file");
+    connect(m_importBtn, &QPushButton::clicked, this, &SettingsPage::onImportSettings);
+    m_rightLayout->addWidget(m_importBtn);
+
     // Reset All button
     m_resetAllBtn = new QPushButton("Reset All");
     m_resetAllBtn->setObjectName("actionButton");
     connect(m_resetAllBtn, &QPushButton::clicked, this, &SettingsPage::onResetAll);
-    
+
     m_rightLayout->addWidget(m_resetAllBtn);
     m_rightLayout->addStretch();
 }
@@ -535,6 +554,199 @@ void SettingsPage::setupDebugSettings()
 
     // Push the persisted kernel logging preference down to the driver on startup
     writeKernelLoggingFlag(kernelLogs && debugEnabled);
+}
+
+namespace {
+// All QSettings stores the app writes to. Each pair is (organization, application).
+const QVector<QPair<QString, QString>> kSettingsStores = {
+    { "LianLi",     "LConnect3" },       // startup, fan port config, debug, temp unit
+    { "LConnect3",  "Lighting" },        // effect, speed, brightness, per-effect colors
+    { "LConnect3",  "FanProfile" },      // last selected profile
+    { "LConnect3",  "FanCurves" },       // per-port custom curves
+    { "LConnect3",  "CustomProfiles" },  // user-renamed custom profile names + curves
+    { "LConnect3",  "PortProfiles" },    // per-port profile assignment
+    { "LConnect3",  "PortNames" },       // per-port display names
+    { "LConnect3",  "FanTargets" },      // numeric editor temp/RPM targets
+    { "LConnect3",  "FanControl" },      // CPU / GPU control source
+};
+
+QString storeKey(const QPair<QString, QString> &store) {
+    return store.first + "/" + store.second;
+}
+} // namespace
+
+void SettingsPage::onExportSettings()
+{
+    QString defaultDir = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
+    if (defaultDir.isEmpty()) {
+        defaultDir = QDir::homePath();
+    }
+    QString stamp = QDateTime::currentDateTime().toString("yyyyMMdd-HHmmss");
+    QString defaultPath = QString("%1/llconnect3-settings-%2.json").arg(defaultDir, stamp);
+
+    QString path = QFileDialog::getSaveFileName(
+        this,
+        "Export LL-Connect 3 Settings",
+        defaultPath,
+        "LL-Connect 3 Settings (*.json);;All Files (*)");
+
+    if (path.isEmpty()) {
+        return;
+    }
+
+    QJsonObject stores;
+    for (const auto &store : kSettingsStores) {
+        QSettings s(store.first, store.second);
+        QJsonObject keyMap;
+        const QStringList keys = s.allKeys();
+        for (const QString &key : keys) {
+            keyMap.insert(key, QJsonValue::fromVariant(s.value(key)));
+        }
+        stores.insert(storeKey(store), keyMap);
+    }
+
+    QJsonObject root;
+    root.insert("format", "llconnect3-settings");
+    root.insert("formatVersion", 1);
+    root.insert("appVersion", QString(APP_VERSION_STRING));
+    root.insert("exportedAt", QDateTime::currentDateTime().toString(Qt::ISODate));
+    root.insert("settings", stores);
+
+    QFile file(path);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        QMessageBox::warning(this, "Export Failed",
+            "Could not write to:\n" + path + "\n\n" + file.errorString());
+        return;
+    }
+    const QByteArray payload = QJsonDocument(root).toJson(QJsonDocument::Indented);
+    const qint64 written = file.write(payload);
+    if (written != payload.size()) {
+        QMessageBox::warning(this, "Export Failed",
+            "Could not finish writing:\n" + path + "\n\n" + file.errorString());
+        file.close();
+        return;
+    }
+    file.close();
+
+    QMessageBox::information(this, "Export Complete",
+        "Settings exported to:\n" + path);
+    qDebug() << "Exported settings to" << path;
+}
+
+void SettingsPage::onImportSettings()
+{
+    QString defaultDir = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
+    if (defaultDir.isEmpty()) {
+        defaultDir = QDir::homePath();
+    }
+
+    QString path = QFileDialog::getOpenFileName(
+        this,
+        "Import LL-Connect 3 Settings",
+        defaultDir,
+        "LL-Connect 3 Settings (*.json);;All Files (*)");
+
+    if (path.isEmpty()) {
+        return;
+    }
+
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly)) {
+        QMessageBox::warning(this, "Import Failed",
+            "Could not read:\n" + path + "\n\n" + file.errorString());
+        return;
+    }
+    const QByteArray bytes = file.readAll();
+    file.close();
+
+    QJsonParseError parseError{};
+    QJsonDocument doc = QJsonDocument::fromJson(bytes, &parseError);
+    if (doc.isNull() || !doc.isObject()) {
+        QMessageBox::warning(this, "Import Failed",
+            "The file is not a valid LL-Connect 3 settings export.\n\n" + parseError.errorString());
+        return;
+    }
+
+    const QJsonObject root = doc.object();
+    if (root.value("format").toString() != "llconnect3-settings") {
+        QMessageBox::warning(this, "Import Failed",
+            "Unrecognized file format. Expected an LL-Connect 3 settings export.");
+        return;
+    }
+
+    const QJsonValue formatVersionValue = root.value("formatVersion");
+    if (!formatVersionValue.isDouble() || formatVersionValue.toInt() != 1) {
+        QMessageBox::warning(this, "Import Failed",
+            "Unsupported settings export format version. This file was produced by a "
+            "different version of LL-Connect 3.");
+        return;
+    }
+
+    const QJsonObject stores = root.value("settings").toObject();
+    if (stores.isEmpty()) {
+        QMessageBox::warning(this, "Import Failed",
+            "The settings file does not contain any settings to import.");
+        return;
+    }
+
+    // Validate every present store entry *before* mutating anything. A malformed
+    // entry (non-object, wrong type) would otherwise wipe a recognized
+    // QSettings store and restore nothing in its place.
+    QVector<QPair<QPair<QString, QString>, QJsonObject>> validatedStores;
+    for (const auto &store : kSettingsStores) {
+        const QString key = storeKey(store);
+        if (!stores.contains(key)) {
+            continue;
+        }
+        const QJsonValue storeValue = stores.value(key);
+        if (!storeValue.isObject()) {
+            QMessageBox::warning(this, "Import Failed",
+                "The settings file is malformed. Entry \"" + key + "\" is not an object.");
+            return;
+        }
+        validatedStores.append({store, storeValue.toObject()});
+    }
+
+    if (validatedStores.isEmpty()) {
+        QMessageBox::warning(this, "Import Failed",
+            "The settings file does not contain any recognized settings stores.");
+        return;
+    }
+
+    QMessageBox confirm(this);
+    confirm.setWindowTitle("Import Settings");
+    confirm.setIcon(QMessageBox::Question);
+    confirm.setText("Replace your current settings with the contents of this file?");
+    confirm.setInformativeText(
+        "Your current fan curves, lighting colors, profile names, port names, "
+        "and other settings will be overwritten.\n\n"
+        "Source: " + path);
+    confirm.setStandardButtons(QMessageBox::Yes | QMessageBox::No);
+    confirm.setDefaultButton(QMessageBox::No);
+    if (confirm.exec() != QMessageBox::Yes) {
+        return;
+    }
+
+    int restored = 0;
+    for (const auto &entry : validatedStores) {
+        const auto &store = entry.first;
+        const QJsonObject &keyMap = entry.second;
+
+        QSettings s(store.first, store.second);
+        s.clear(); // wipe the store so removed keys don't linger
+        for (auto it = keyMap.begin(); it != keyMap.end(); ++it) {
+            s.setValue(it.key(), it.value().toVariant());
+        }
+        s.sync();
+        restored += keyMap.size();
+    }
+
+    qDebug() << "Imported" << restored << "settings entries from" << path;
+
+    QMessageBox::information(this, "Import Complete",
+        QString("Imported %1 settings.\n\n"
+                "Please restart LL-Connect 3 for the imported settings to take full effect.")
+            .arg(restored));
 }
 
 void SettingsPage::checkForUpdatesOnStartup()

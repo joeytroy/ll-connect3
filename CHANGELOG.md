@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [1.3.0] - 2026-05-22 — Import/Export settings & fan curve point editing
+
+### Added
+- **Import / Export settings**: New buttons on the Settings page write all user settings to a JSON file (fan curves, per-port profiles, custom profile names, port display names, lighting effect + per-effect colors, temperature unit, fan port configuration, CPU/GPU control source, target temp/RPM). Import validates the file format, confirms before overwriting, and prompts to restart so the cached page state refreshes. Resolves [#19](https://github.com/joeytroy/ll-connect3/issues/19).
+- **Click-to-edit fan curve points**: Clicking a circle on the fan curve now selects it (highlighted in gold) and binds the Temp/RPM editor in the control bar to that specific point. Typing in the spinboxes moves the selected point instead of always rewriting the same hard-coded middle anchor. The selection also tracks live while dragging.
+
+### Fixed
+- **Numeric Temp/RPM editor only changed one point**: The Temp/RPM spinboxes on the Fan Profile page always rewrote curve index 3 regardless of which fan curve point the user was looking at, so curves built from a different anchor could not be edited numerically. The editor now follows the user's selected point (falling back to the legacy middle anchor only when nothing is selected). Resolves [#19](https://github.com/joeytroy/ll-connect3/issues/19).
+
+### Changed
+- **Version**: Bumped to 1.3.0.
+
+---
+
 ## [1.2.0] - 2026-02-28 — Lighting overhaul, real RPM, version check & driver fixes
 
 ### Added

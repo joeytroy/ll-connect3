@@ -23,8 +23,13 @@ public:
     void setUseFahrenheit(bool useF);
     QVector<QPointF> getCurvePoints() const { return m_curvePoints; }
 
+    int selectedPoint() const { return m_selectedPoint; }
+    void setSelectedPoint(int index);
+    void updatePoint(int index, double temp, double rpm);
+
 signals:
     void curvePointsChanged(const QVector<QPointF> &points);
+    void pointSelected(int index, double temp, double rpm);
 
 protected:
     void paintEvent(QPaintEvent *event) override;
@@ -66,6 +71,8 @@ private:
     // Interactive editing
     bool m_dragging;
     int m_draggedPoint;
+    int m_selectedPoint; // sticky selection, persists after release
+    QColor m_selectedColor;
     
     // Graph state
     bool m_graphEnabled;
