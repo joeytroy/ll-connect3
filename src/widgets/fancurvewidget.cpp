@@ -22,6 +22,7 @@ FanCurveWidget::FanCurveWidget(QWidget *parent)
     , m_displayRpmMax(2100)
     , m_dragging(false)
     , m_draggedPoint(-1)
+    , m_selectedPoint(-1)
     , m_graphEnabled(true)
     , m_useFahrenheit(false)
     , m_backgroundColor(QColor(26, 26, 26))
@@ -30,6 +31,7 @@ FanCurveWidget::FanCurveWidget(QWidget *parent)
     , m_curveColor(QColor(100, 150, 255))
     , m_pointColor(QColor(255, 255, 255))
     , m_currentLineColor(QColor(0, 255, 0))
+    , m_selectedColor(QColor(255, 200, 0))
 {
     setMinimumSize(400, 200);
     setupCurveData();
@@ -54,6 +56,7 @@ void FanCurveWidget::setProfile(const QString &profile)
 {
     m_profile = profile;
     setupCurveData();
+    m_selectedPoint = -1;
     update();
 }
 
@@ -78,6 +81,43 @@ void FanCurveWidget::setGraphEnabled(bool enabled)
 void FanCurveWidget::setCustomCurve(const QVector<QPointF> &points)
 {
     m_curvePoints = points;
+    // Curve was replaced wholesale (profile switch, port switch, default reset);
+    // a previously selected index may now refer to a totally different point.
+    m_selectedPoint = -1;
+    update();
+}
+
+void FanCurveWidget::setSelectedPoint(int index)
+{
+    if (index < -1 || index >= m_curvePoints.size()) {
+        return;
+    }
+    if (m_selectedPoint != index) {
+        m_selectedPoint = index;
+        update();
+    }
+}
+
+void FanCurveWidget::updatePoint(int index, double temp, double rpm)
+{
+    if (index < 0 || index >= m_curvePoints.size()) {
+        return;
+    }
+
+    // Keep curve monotonic in temperature
+    if (index > 0) {
+        temp = qMax(temp, m_curvePoints[index - 1].x() + 1.0);
+    }
+    if (index < m_curvePoints.size() - 1) {
+        temp = qMin(temp, m_curvePoints[index + 1].x() - 1.0);
+    }
+
+    // Match drag clamping: first point can drop to 120, others to 840
+    double minRPM = (index == 0) ? 120.0 : 840.0;
+    rpm = qBound(minRPM, rpm, m_rpmMax);
+    temp = qBound(m_tempMin, temp, m_tempMax);
+
+    m_curvePoints[index] = QPointF(temp, rpm);
     update();
 }
 
@@ -271,14 +311,21 @@ void FanCurveWidget::drawCurve(QPainter &painter)
 void FanCurveWidget::drawDataPoints(QPainter &painter)
 {
     QRect graphRect = rect().adjusted(m_marginLeft, m_marginTop, -m_marginRight, -m_marginBottom);
-    
+
     for (int i = 0; i < m_curvePoints.size(); ++i) {
         QPointF point = dataToPixel(m_curvePoints[i]);
-        
-        // Draw white circle with blue outline
-        painter.setPen(QPen(m_curveColor, 2));
-        painter.setBrush(QBrush(m_pointColor));
-        painter.drawEllipse(point, 4, 4);
+
+        if (i == m_selectedPoint) {
+            // Larger, gold-outlined point with white fill to indicate selection
+            painter.setPen(QPen(m_selectedColor, 3));
+            painter.setBrush(QBrush(m_pointColor));
+            painter.drawEllipse(point, 7, 7);
+        } else {
+            // Draw white circle with blue outline
+            painter.setPen(QPen(m_curveColor, 2));
+            painter.setBrush(QBrush(m_pointColor));
+            painter.drawEllipse(point, 4, 4);
+        }
     }
 }
 
@@ -351,41 +398,58 @@ QPointF FanCurveWidget::pixelToData(const QPointF &pixelPoint)
 
 void FanCurveWidget::mousePressEvent(QMouseEvent *event)
 {
-    
-    if (event->button() == Qt::LeftButton) {
-        QPointF clickPoint = event->pos();
-        QPointF dataPoint = pixelToData(clickPoint);
-        
-        // Check if clicking near a data point
-        for (int i = 0; i < m_curvePoints.size(); ++i) {
-            QPointF point = dataToPixel(m_curvePoints[i]);
-            if (QLineF(clickPoint, point).length() < 10) {
-                m_dragging = true;
-                m_draggedPoint = i;
-                break;
-            }
+    if (event->button() != Qt::LeftButton) {
+        return;
+    }
+
+    QPointF clickPoint = event->pos();
+
+    // Find nearest point within the hit radius
+    int hitIndex = -1;
+    for (int i = 0; i < m_curvePoints.size(); ++i) {
+        QPointF point = dataToPixel(m_curvePoints[i]);
+        if (QLineF(clickPoint, point).length() < 12) {
+            hitIndex = i;
+            break;
         }
+    }
+
+    if (hitIndex >= 0) {
+        m_dragging = true;
+        m_draggedPoint = hitIndex;
+        m_selectedPoint = hitIndex;
+        update();
+        emit pointSelected(hitIndex,
+                           m_curvePoints[hitIndex].x(),
+                           m_curvePoints[hitIndex].y());
+    } else if (m_selectedPoint != -1) {
+        // Clicking empty graph area clears selection
+        m_selectedPoint = -1;
+        update();
+        emit pointSelected(-1, 0.0, 0.0);
     }
 }
 
 void FanCurveWidget::mouseMoveEvent(QMouseEvent *event)
 {
-    
     if (m_dragging && m_draggedPoint >= 0) {
         QPointF clickPoint = event->pos();
         QPointF dataPoint = pixelToData(clickPoint);
-        
+
         // Clamp temperature to valid range
         dataPoint.setX(qMax(m_tempMin, qMin(m_tempMax, dataPoint.x())));
-        
+
         // Clamp RPM with special handling:
         // - First point (0°C idle): can be as low as 120 RPM
         // - All other points: minimum 840 RPM to prevent fan shutdown
         double minRPM = (m_draggedPoint == 0) ? 120.0 : 840.0;
         dataPoint.setY(qMax(minRPM, qMin((double)m_rpmMax, dataPoint.y())));
-        
+
         m_curvePoints[m_draggedPoint] = dataPoint;
         update();
+
+        // Live-update the numeric editor while dragging
+        emit pointSelected(m_draggedPoint, dataPoint.x(), dataPoint.y());
     }
 }
 
@@ -398,6 +462,7 @@ void FanCurveWidget::mouseReleaseEvent(QMouseEvent *event)
     }
     m_dragging = false;
     m_draggedPoint = -1;
+    // Note: m_selectedPoint persists across release for sticky selection.
 }
 
 int FanCurveWidget::calculateRPMForTemperature(int temperature)

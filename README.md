@@ -2,7 +2,14 @@
 
 Complete Linux support for the Lian Li SL‑Infinity hub: a kernel fan driver and a Qt desktop app that mirrors Windows L‑Connect 3.
 
-#### [1.2.0] - 2026-02-28 — Lighting overhaul, real RPM, version check & driver fixes [CHANGELOG Information](CHANGELOG.md)
+#### [1.3.0] - 2026-05-22 — Import/Export settings & fan curve point editing [CHANGELOG Information](CHANGELOG.md)
+
+## Support This Project
+
+If you find this project helpful, please consider supporting its development:
+
+[![PayPal](https://img.shields.io/badge/Donate-PayPal-blue.svg)](https://www.paypal.com/paypalme/joeytroynm)
+
 
 ### Supported Distributions
 
@@ -14,11 +21,7 @@ Complete Linux support for the Lian Li SL‑Infinity hub: a kernel fan driver an
 | **CachyOS / Clang kernel** | CachyOS (builds with `LLVM=1`) |
 | **Immutable (rpm-ostree)** | Bazzite OS |
 
-## Support This Project
 
-If you find this project helpful, please consider supporting its development:
-
-[![PayPal](https://img.shields.io/badge/Donate-PayPal-blue.svg)](https://www.paypal.com/paypalme/joeytroynm)
 
 Your support helps maintain and improve this open-source driver for the Lian Li community!
 
@@ -93,7 +96,7 @@ The uninstall script removes the app, the kernel module, its auto‑load config,
 
 <img src="docs/screenshots/systeminfo.png" width="600"/>
 
-- **Fan Profile** — Per‑port custom fan curves with 4 presets (Quiet, Standard, High Speed, Full Speed) and 3 custom slots. Each port can have its own curve driven by CPU or GPU temperature, with specific temp/RPM targets per port. Ports can be renamed with custom labels. **Real RPM** is read directly from the hub hardware and displayed per port — no more estimated values.
+- **Fan Profile** — Per‑port custom fan curves with 4 presets (Quiet, Standard, High Speed, Full Speed) and 3 custom slots. Each port can have its own curve driven by CPU or GPU temperature, with specific temp/RPM targets per port. **Click any point on the curve** to select it, then dial the exact temperature/RPM into the editor — no more being stuck editing a single anchor. Ports can be renamed with custom labels. **Real RPM** is read directly from the hub hardware and displayed per port — no more estimated values.
 
 <img src="docs/screenshots/fanprofile.png" width="600"/>
 
@@ -101,7 +104,7 @@ The uninstall script removes the app, the kernel module, its auto‑load config,
 
 <img src="docs/screenshots/lighting.png" width="600"/>
 
-- **Settings** — Startup behavior (minimize on launch), automatic update checking against GitHub releases, fan port configuration, temperature unit (°C/°F), and developer debug options. Reset all settings to defaults with one click.
+- **Settings** — Startup behavior (minimize on launch), automatic update checking against GitHub releases, fan port configuration, temperature unit (°C/°F), and developer debug options. **Import / Export** your fan curves, lighting colors, profile names and port labels to a JSON file to back them up or share them between machines. Reset all settings to defaults with one click.
 
 <img src="docs/screenshots/settings.png" width="600"/>
 

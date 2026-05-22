@@ -30,6 +30,8 @@ signals:
 private slots:
     void onResetAll();
     void onFanPortToggled(int port, bool enabled);
+    void onExportSettings();
+    void onImportSettings();
 
 private:
     void setupUI();
@@ -70,6 +72,8 @@ private:
     
     // Action buttons
     QPushButton *m_resetAllBtn;
+    QPushButton *m_exportBtn;
+    QPushButton *m_importBtn;
     
     // Reference to lighting page for reset
     LightingPage *m_lightingPage;
