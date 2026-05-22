@@ -436,8 +436,16 @@ void FanCurveWidget::mouseMoveEvent(QMouseEvent *event)
         QPointF clickPoint = event->pos();
         QPointF dataPoint = pixelToData(clickPoint);
 
-        // Clamp temperature to valid range
-        dataPoint.setX(qMax(m_tempMin, qMin(m_tempMax, dataPoint.x())));
+        // Clamp temperature to valid range and keep the curve monotonic by
+        // preventing the dragged point from crossing its neighbors. This matches
+        // the ordering constraint applied in updatePoint().
+        double leftBound  = (m_draggedPoint > 0)
+            ? m_curvePoints[m_draggedPoint - 1].x() + 1.0
+            : m_tempMin;
+        double rightBound = (m_draggedPoint < m_curvePoints.size() - 1)
+            ? m_curvePoints[m_draggedPoint + 1].x() - 1.0
+            : m_tempMax;
+        dataPoint.setX(qBound(leftBound, dataPoint.x(), rightBound));
 
         // Clamp RPM with special handling:
         // - First point (0°C idle): can be as low as 120 RPM

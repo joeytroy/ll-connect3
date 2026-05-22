@@ -1726,7 +1726,6 @@ void FanProfilePage::onTargetTemperatureChanged(int value)
 
     int rpm = m_targetRpmSpin ? m_targetRpmSpin->value()
                               : m_portTargetRpm.value(m_selectedPort, calculateRPMForCustomCurve(m_selectedPort, tempC));
-    m_portTargetRpm[m_selectedPort] = rpm;
 
     // Apply to custom curve
     QVector<QPointF> curve;
@@ -1754,15 +1753,24 @@ void FanProfilePage::onTargetTemperatureChanged(int value)
             newTemp = qMin(newTemp, curve[idx + 1].x() - 1.0);
         }
 
+        // Apply the same RPM floor the widget enforces so we never persist
+        // a non-first point below the safe operating speed.
+        double minRPM = (idx == 0) ? 120.0 : 840.0;
+        double clampedRpm = qBound(minRPM, static_cast<double>(rpm), 2100.0);
+
         curve[idx].setX(newTemp);
-        curve[idx].setY(static_cast<double>(rpm));
+        curve[idx].setY(clampedRpm);
 
         m_customCurves[m_selectedPort] = curve;
         saveCustomCurves();
+        // Keep persisted target in sync with what's actually on the curve
+        m_portTargetRpm[m_selectedPort] = static_cast<int>(clampedRpm);
         // Update the widget in-place so the user's selection highlight is preserved
-        m_fanCurveWidget->updatePoint(idx, newTemp, static_cast<double>(rpm));
+        m_fanCurveWidget->updatePoint(idx, newTemp, clampedRpm);
 
         controlFanSpeeds();
+    } else {
+        m_portTargetRpm[m_selectedPort] = rpm;
     }
 
     savePortTargets();
@@ -1773,8 +1781,6 @@ void FanProfilePage::onTargetRPMChanged(int value)
     if (m_selectedPort < 1 || m_selectedPort > 4) {
         return;
     }
-
-    m_portTargetRpm[m_selectedPort] = value;
 
     // Apply to custom curve using the user-selected point (or fall back to middle anchor)
     QVector<QPointF> curve;
@@ -1813,9 +1819,13 @@ void FanProfilePage::onTargetRPMChanged(int value)
 
         m_customCurves[m_selectedPort] = curve;
         saveCustomCurves();
+        // Persist the clamped value so the saved target matches the curve
+        m_portTargetRpm[m_selectedPort] = static_cast<int>(newRpm);
 
         m_fanCurveWidget->updatePoint(idx, newTemp, newRpm);
         controlFanSpeeds();
+    } else {
+        m_portTargetRpm[m_selectedPort] = value;
     }
 
     savePortTargets();

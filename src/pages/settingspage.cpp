@@ -618,7 +618,14 @@ void SettingsPage::onExportSettings()
             "Could not write to:\n" + path + "\n\n" + file.errorString());
         return;
     }
-    file.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
+    const QByteArray payload = QJsonDocument(root).toJson(QJsonDocument::Indented);
+    const qint64 written = file.write(payload);
+    if (written != payload.size()) {
+        QMessageBox::warning(this, "Export Failed",
+            "Could not finish writing:\n" + path + "\n\n" + file.errorString());
+        file.close();
+        return;
+    }
     file.close();
 
     QMessageBox::information(this, "Export Complete",
@@ -667,10 +674,42 @@ void SettingsPage::onImportSettings()
         return;
     }
 
+    const QJsonValue formatVersionValue = root.value("formatVersion");
+    if (!formatVersionValue.isDouble() || formatVersionValue.toInt() != 1) {
+        QMessageBox::warning(this, "Import Failed",
+            "Unsupported settings export format version. This file was produced by a "
+            "different version of LL-Connect 3.");
+        return;
+    }
+
     const QJsonObject stores = root.value("settings").toObject();
     if (stores.isEmpty()) {
         QMessageBox::warning(this, "Import Failed",
             "The settings file does not contain any settings to import.");
+        return;
+    }
+
+    // Validate every present store entry *before* mutating anything. A malformed
+    // entry (non-object, wrong type) would otherwise wipe a recognized
+    // QSettings store and restore nothing in its place.
+    QVector<QPair<QPair<QString, QString>, QJsonObject>> validatedStores;
+    for (const auto &store : kSettingsStores) {
+        const QString key = storeKey(store);
+        if (!stores.contains(key)) {
+            continue;
+        }
+        const QJsonValue storeValue = stores.value(key);
+        if (!storeValue.isObject()) {
+            QMessageBox::warning(this, "Import Failed",
+                "The settings file is malformed. Entry \"" + key + "\" is not an object.");
+            return;
+        }
+        validatedStores.append({store, storeValue.toObject()});
+    }
+
+    if (validatedStores.isEmpty()) {
+        QMessageBox::warning(this, "Import Failed",
+            "The settings file does not contain any recognized settings stores.");
         return;
     }
 
@@ -689,12 +728,9 @@ void SettingsPage::onImportSettings()
     }
 
     int restored = 0;
-    for (const auto &store : kSettingsStores) {
-        const QString key = storeKey(store);
-        if (!stores.contains(key)) {
-            continue;
-        }
-        const QJsonObject keyMap = stores.value(key).toObject();
+    for (const auto &entry : validatedStores) {
+        const auto &store = entry.first;
+        const QJsonObject &keyMap = entry.second;
 
         QSettings s(store.first, store.second);
         s.clear(); // wipe the store so removed keys don't linger
