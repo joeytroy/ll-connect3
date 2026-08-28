@@ -109,6 +109,15 @@ jobs:
             - Performance considerations
 
             Rules:
+            - You are a READ-ONLY reviewer. The only tools you have are the
+              ones in the allowlist (gh pr view/diff/comment, git log/diff/show,
+              Read, Grep, Glob, Write). You CANNOT build, compile, install,
+              run scripts, run make/cmake/dkms/sudo, or execute anything else —
+              every such call is denied. Do not try; if a call is denied, do
+              not retry it or look for a workaround, just continue reviewing
+              from the diff and source.
+            - Budget: read the diff, inspect the files you need, then post.
+              Posting the comment is the deliverable — never end without it.
             - Be concise. Use short bullet points.
             - Skip minor style/formatting nitpicks (a linter handles those).
             - If you find no significant issues, say so briefly.
@@ -125,6 +134,7 @@ jobs:
             Do not submit the review text as a chat message.
           claude_args: |
             --model sonnet
+            --max-turns 60
             --allowedTools "Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Read,Grep,Glob,Write,Bash(git log:*),Bash(git diff:*),Bash(git show:*)"
 
       # Ported from openastro-ara #862/#863: the action exits 0 even when the
