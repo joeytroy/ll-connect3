@@ -39,6 +39,9 @@ dkms-install:
 	sudo rm -rf $(DKMS_SRC)
 	sudo mkdir -p $(DKMS_SRC)
 	sudo cp Lian_Li_SL_INFINITY.c Makefile dkms.conf $(DKMS_SRC)/
+ifdef USE_LLVM
+	sudo sed -i 's/^MAKE\[0\]="make /MAKE[0]="make USE_LLVM=1 /; s/^CLEAN="make /CLEAN="make USE_LLVM=1 /' $(DKMS_SRC)/dkms.conf
+endif
 	sudo dkms add -m $(DKMS_NAME) -v $(DKMS_VERSION) 2>/dev/null || true
 	sudo dkms build -m $(DKMS_NAME) -v $(DKMS_VERSION)
 	sudo dkms install -m $(DKMS_NAME) -v $(DKMS_VERSION) --force

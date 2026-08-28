@@ -60,6 +60,7 @@ Choose **5** for CachyOS or any Arch system using a Clang-built kernel; this pas
 
 After install:
 - Run the app: `LLConnect3`
+- The installer asks how to install the kernel driver: **DKMS** (recommended — rebuilt automatically on kernel updates) or **Manual** (current kernel only). Bazzite always uses the manual path.
 - The kernel module auto‑loads on boot (`Lian_Li_SL_INFINITY`)
 - Fan control: `/proc/Lian_li_SL_INFINITY/Port_X/fan_speed` (write 0–100)
 - Real RPM readback: `/proc/Lian_li_SL_INFINITY/Port_X/fan_rpm` (read-only, from hub hardware)

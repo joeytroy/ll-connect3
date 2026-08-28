@@ -76,6 +76,15 @@ uninstall_kernel_driver() {
         print_info "Kernel module is not loaded"
     fi
     
+    # Remove DKMS registration (if the driver was installed via DKMS)
+    if command -v dkms &> /dev/null && dkms status 2>/dev/null | grep -q "^lian-li-sl-infinity"; then
+        print_info "Removing kernel module from DKMS..."
+        sudo dkms remove -m lian-li-sl-infinity -v 1.0 --all 2>/dev/null || true
+        sudo rm -rf /usr/src/lian-li-sl-infinity-1.0
+        sudo depmod -a
+        print_success "DKMS registration removed"
+    fi
+
     # Remove module from system
     if [ -d "$KERNEL_DIR" ]; then
         cd "$KERNEL_DIR"
