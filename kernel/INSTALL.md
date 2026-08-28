@@ -18,7 +18,23 @@ make reload
 
 ## Build & Install
 
-### Option 1: Using Makefile (Recommended)
+### Option 0: DKMS (Recommended — survives kernel updates)
+A plain `make install` copies the module into `/lib/modules/$(uname -r)/extra/`
+for the *current* kernel only. After the next kernel update the module is gone
+and the fans stop until you rebuild. DKMS rebuilds it automatically on every
+kernel install:
+
+```bash
+sudo apt install dkms          # Debian/Ubuntu
+cd kernel
+make dkms-install
+dkms status                    # should list lian-li-sl-infinity/1.0 for your kernel
+```
+
+To remove: `make dkms-uninstall`. When bumping the driver version, update
+`PACKAGE_VERSION` in `dkms.conf` and re-run `make dkms-install`.
+
+### Option 1: Using Makefile (current kernel only)
 ```bash
 # Build the module
 make
