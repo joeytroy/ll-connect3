@@ -1,0 +1,163 @@
+name: Claude Code Review
+
+# pull_request_target (not pull_request) so repository secrets are available
+# to fork PRs — but ONLY once a maintainer applies the `safe-to-review` label
+# (see the job-level `if`). The workflow definition always comes from the
+# default branch under this trigger, so a fork PR cannot alter the bot's
+# prompt/tools; the residual risk is the agent READING hostile PR content
+# (prompt injection into the review comment), bounded by the locked-down
+# allowedTools below. The maintainer's label click is the trust decision.
+on:
+  pull_request_target:  # zizmor: ignore[dangerous-triggers] -- label-gated; see comment above
+    types: [opened, synchronize, labeled]
+
+# Cancel an in-progress review if a newer commit is pushed to the same PR,
+# so rapid pushes don't stack up redundant reviews (saves usage).
+concurrency:
+  group: claude-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    # Same-repo branches review automatically on every push. Fork PRs review
+    # only while a maintainer has applied the `safe-to-review` label: the
+    # `labeled` trigger fires the first review the moment the label lands, and
+    # `synchronize` keeps reviewing later pushes for as long as the label stays
+    # on (remove it to stop the bot). Dependabot PRs are skipped entirely (its
+    # bumps are reviewed by eye; no point spending bot runs on lockstep bumps).
+    if: >-
+      github.actor != 'dependabot[bot]'
+      && (
+        github.event.pull_request.head.repo.full_name == github.repository
+        || contains(github.event.pull_request.labels.*.name, 'safe-to-review')
+      )
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          # pull_request_target checks out the BASE branch by default; the bot
+          # must review the PR's actual code. Explicit head SHA (not the merge
+          # ref) so the review matches exactly what the author pushed.
+          ref: ${{ github.event.pull_request.head.sha }}
+          # checkout v7 refuses fork-code checkout under pull_request_target
+          # without this opt-in. Accepting that risk is exactly what the
+          # maintainer's safe-to-review label means (see the trigger comment);
+          # the fork code is read, never built or executed, in this job.
+          allow-unsafe-pr-checkout: true
+          fetch-depth: 1
+          persist-credentials: false
+
+      - uses: anthropics/claude-code-action@be7b93b1907a4abad570368f3c74b6fe3807510b  # v1
+        env:
+          # allowed_non_write_users (below) auto-enables subprocess secret
+          # scrubbing, which strips the GitHub token from the agent's
+          # subprocesses and breaks this workflow's "agent posts its review
+          # via gh pr comment" design — the assert step then fails EVERY run.
+          # Opt out: this restores the pre-#149 posture (own-actor runs always
+          # reviewed the same untrusted fork content unscrubbed); the
+          # safe-to-review label is the per-PR trust gate and the token
+          # carries only pull-requests: write.
+          CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: "0"
+        # The assert step below is the REAL gate (comment posted or fail), and
+        # it exempts workflow-editing PRs — where this action refuses to run
+        # ("Invalid OIDC token" when the workflow file differs from the default
+        # branch) and would otherwise hard-fail the job before the assert
+        # step's exemption can apply.
+        continue-on-error: true
+        with:
+          # Subscription (Pro/Max) auth. Generate locally with `claude setup-token`
+          # and store as an org or repo secret named CLAUDE_CODE_OAUTH_TOKEN.
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Explicit token so the action skips its OIDC -> GitHub App token
+          # exchange: Anthropic's exchange endpoint 401s pull_request_target
+          # runs ("Invalid OIDC token"), which this workflow needs for
+          # label-gated fork reviews. The workflow's own permissions block
+          # grants this token pull-requests: write; the review comment posts
+          # as github-actions[bot], which the assert step already accepts.
+          github_token: ${{ github.token }}
+          # The action independently requires the TRIGGERING ACTOR to have
+          # write access, so a fork contributor's own push fails the review
+          # job in seconds ("Actor does not have write permissions") even
+          # when the maintainer has applied the safe-to-review label. List
+          # trusted fork contributors here (never '*') — the label remains
+          # the per-PR trust decision, this list is the per-person one.
+          # Requires the explicit github_token above.
+          allowed_non_write_users: "rdsfelipe"
+          # Keep the whole review in ONE top-level comment that updates in place,
+          # instead of posting a new comment on every push.
+          use_sticky_comment: true
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+
+            You are reviewing this pull request. The PR branch is already
+            checked out in the current working directory.
+
+            This repo is a Linux kernel HID driver (kernel/), a Qt 6 desktop
+            app (src/), and bash install scripts. Pay particular attention
+            to kernel-module safety (locking, bounds, sysfs/proc handling)
+            and to shell scripts that run with sudo.
+
+            Focus ONLY on genuinely important issues, in these categories:
+            - Potential bugs or logic errors
+            - Correctness
+            - Security implications
+            - Performance considerations
+
+            Rules:
+            - Be concise. Use short bullet points.
+            - Skip minor style/formatting nitpicks (a linter handles those).
+            - If you find no significant issues, say so briefly.
+            - End your comment with a sign-off line:
+              "✅ Approved" if no significant issues, or
+              "⚠️ Issues found" if there are things to address.
+
+            Post your review as a SINGLE top-level comment. To post it: first
+            write the full review text to /tmp/review.md with the Write tool,
+            then run exactly `gh pr comment <PR NUMBER> --body-file /tmp/review.md`.
+            Do NOT use --body with command substitution ($(...)/backticks/heredocs)
+            — the permission rules reject any command containing substitution, and
+            the review will silently fail to post.
+            Do not submit the review text as a chat message.
+          claude_args: |
+            --model sonnet
+            --allowedTools "Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Read,Grep,Glob,Write,Bash(git log:*),Bash(git diff:*),Bash(git show:*)"
+
+      # Ported from openastro-ara #862/#863: the action exits 0 even when the
+      # agent never manages to post its comment, so a green check could exist
+      # with no review anywhere. The review BODY is the artifact — a run that
+      # produced no fresh bot comment must fail the check.
+      - name: Assert the review comment posted
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # The action refuses to run on a PR that modifies this very workflow
+          # (it requires the file to match the default branch). That skip is
+          # loud in the log and only possible on a workflow-editing PR, which
+          # the maintainer reviews by eye — exempt it so such PRs aren't
+          # permanently red, while every normal PR still requires a comment.
+          if gh pr diff "${{ github.event.pull_request.number }}" \
+              --repo "${{ github.repository }}" --name-only \
+              | grep -qx ".github/workflows/claude-review.yml"; then
+            echo "::warning::This PR modifies the review workflow — the action skips itself on such PRs; passing without a review comment. Review it by eye."
+            exit 0
+          fi
+          # Only the BOT's comments count, and only ones touched during THIS
+          # run — a human writing "Approved" in discussion, or a sticky
+          # comment left over from a previous commit's review, must not
+          # satisfy the gate.
+          started="$(gh run view "$GITHUB_RUN_ID" --repo "${{ github.repository }}" --json createdAt --jq .createdAt)"
+          if gh api "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments" \
+              --paginate \
+              | jq -r --arg since "$started" \
+              '.[] | select(.user.login | test("^(claude|github-actions)(\\[bot\\])?$")) | select(.updated_at >= $since) | .body' \
+              | grep -qE "Approved|Issues found"; then
+            echo "Review comment found."
+          else
+            echo "::error::The review agent finished without posting its comment — failing rather than green-lighting a review that does not exist."
+            exit 1
+          fi
