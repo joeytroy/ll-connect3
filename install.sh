@@ -160,7 +160,7 @@ install_bazzite_packages() {
     fi
     RUNNING_KERNEL=$(uname -r)
     local packages_to_install=("${packages[@]}")
-    if [[ " ${packages[@]} " =~ " kernel-devel-" ]]; then
+    if [[ " ${packages[*]} " =~ " kernel-devel-" ]]; then
         packages_to_install+=("kernel-headers-$RUNNING_KERNEL")
     fi
     print_info "Layering: ${packages_to_install[*]}"
@@ -223,7 +223,7 @@ install_debian_dependencies() {
         build-essential \
         make \
         gcc \
-        linux-headers-$(uname -r) \
+        "linux-headers-$(uname -r)" \
         cmake \
         qt6-base-dev \
         qt6-charts-dev \
@@ -611,7 +611,7 @@ install_application() {
     
     # Build
     print_info "Building application..."
-    if ! make -j$(nproc); then
+    if ! make -j"$(nproc)"; then
         print_error "Application build failed!"
         exit 1
     fi
