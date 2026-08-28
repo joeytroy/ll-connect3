@@ -121,23 +121,37 @@ If you prefer manual steps or are contributing, follow this section. See [CONTRI
 
 ### Kernel Driver (Fan Only)
 
-```bash
-cd ll-connect3/kernel
-make
+**DKMS install (recommended):** the module is registered with DKMS and rebuilt automatically whenever a new kernel is installed.
 
-# Install to system and refresh deps
-make install    # copies .ko into /lib/modules/$(uname -r)/extra and runs depmod
+```bash
+# Debian/Ubuntu: sudo apt install dkms   |  Fedora: sudo dnf install dkms   |  Arch: sudo pacman -S dkms
+cd ll-connect3/kernel
+make dkms-install    # copies source to /usr/src, then dkms add/build/install
 
 # Load the module
-sudo rmmod Lian_Li_SL_INFINITY 2>/dev/null || true
 sudo modprobe Lian_Li_SL_INFINITY
 
 # Auto‑load on boot
 echo "Lian_Li_SL_INFINITY" | sudo tee /etc/modules-load.d/lian-li-sl-infinity.conf
 
 # Verify
+dkms status | grep lian-li
 lsmod | grep Lian_Li
 ls -R /proc/Lian_li_SL_INFINITY
+```
+
+Remove with `make dkms-uninstall`. On distributions that ship a DKMS signing key (e.g. Ubuntu's `shim-signed` MOK), DKMS signs the module automatically so it loads with Secure Boot enabled.
+
+**Manual install (current kernel only):** builds and installs for the running kernel; you must re-run it after every kernel update.
+
+```bash
+cd ll-connect3/kernel
+make
+make install    # copies .ko into /lib/modules/$(uname -r)/extra and runs depmod
+
+sudo rmmod Lian_Li_SL_INFINITY 2>/dev/null || true
+sudo modprobe Lian_Li_SL_INFINITY
+echo "Lian_Li_SL_INFINITY" | sudo tee /etc/modules-load.d/lian-li-sl-infinity.conf
 ```
 
 Notes:
@@ -189,14 +203,14 @@ sudo dmesg | grep -i "sli" | tail -20
 Troubleshooting tips:
 - Make sure kernel headers/devel for your running kernel are installed.
 - If you rebuilt the module, `sudo rmmod Lian_Li_SL_INFINITY && sudo modprobe Lian_Li_SL_INFINITY`.
-- After kernel updates, rebuild: `cd kernel && make clean && make && sudo make install`.
+- After kernel updates: with DKMS nothing to do — check `dkms status`. With a manual install, rebuild: `cd kernel && make clean && make && sudo make install`.
 
 
 ## Troubleshooting (Basics)
 
 ### Secure Boot Compatibility
 
-**IMPORTANT:** This driver does not work with Secure Boot enabled, as the kernel module is unsigned.
+**IMPORTANT:** With a manual `make install` the module is unsigned and will not load with Secure Boot enabled. The DKMS install signs it automatically where the distro provides a MOK key (Ubuntu/Debian `shim-signed`); otherwise use one of the options below.
 
 To check if Secure Boot is enabled:
 ```bash
