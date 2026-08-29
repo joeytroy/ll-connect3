@@ -52,8 +52,12 @@ endif
 	@echo "SL-Infinity driver registered with DKMS; it will be rebuilt on kernel updates."
 
 dkms-uninstall:
-	sudo dkms remove -m $(DKMS_NAME) -v $(DKMS_VERSION) --all || true
-	sudo rm -rf $(DKMS_SRC)
+	@# Remove every registered version (not just the one in dkms.conf) so a
+	@# bumped PACKAGE_VERSION never leaves stale registrations behind
+	for ver in $$( { dkms status 2>/dev/null | sed -nE 's#^$(DKMS_NAME)[/,] *([^,/ ]+).*#\1#p'; echo $(DKMS_VERSION); } | sort -u ); do \
+		sudo dkms remove -m $(DKMS_NAME) -v $$ver --all || true; \
+		sudo rm -rf /usr/src/$(DKMS_NAME)-$$ver; \
+	done
 	sudo depmod -a
 
 reload:
