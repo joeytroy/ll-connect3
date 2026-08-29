@@ -21,6 +21,7 @@ BUILD_DIR="$SCRIPT_DIR/build"
 
 # Distribution type (set by menu)
 DISTRO_TYPE=""
+USE_DKMS=0
 
 # Function to print colored messages
 print_info() {
@@ -97,6 +98,29 @@ show_menu() {
 }
 
 # Check if running as root (we'll use sudo when needed)
+# Ask how the kernel driver should be installed
+select_driver_install_method() {
+    if [[ "$DISTRO_TYPE" == "bazzite" ]]; then
+        # Immutable /lib/modules — DKMS cannot install there; use the manual path.
+        USE_DKMS=0
+        return
+    fi
+    echo ""
+    echo -e "${CYAN}Select how to install the kernel driver:${NC}"
+    echo ""
+    echo -e "  ${BOLD}1)${NC} DKMS (recommended) - rebuilt automatically on every kernel update"
+    echo -e "  ${BOLD}2)${NC} Manual - built for the current kernel only; re-run this script after kernel updates"
+    echo ""
+    while true; do
+        read -p "Enter your choice [1-2] (default 1): " dchoice
+        case "${dchoice:-1}" in
+            1) USE_DKMS=1; print_success "Selected: DKMS"; break ;;
+            2) USE_DKMS=0; print_success "Selected: Manual install"; break ;;
+            *) print_error "Invalid choice. Please enter 1 or 2." ;;
+        esac
+    done
+}
+
 check_sudo() {
     if ! sudo -n true 2>/dev/null; then
         print_info "This script requires sudo privileges. You may be prompted for your password."
@@ -136,7 +160,7 @@ install_bazzite_packages() {
     fi
     RUNNING_KERNEL=$(uname -r)
     local packages_to_install=("${packages[@]}")
-    if [[ " ${packages[@]} " =~ " kernel-devel-" ]]; then
+    if [[ " ${packages[*]} " =~ " kernel-devel-" ]]; then
         packages_to_install+=("kernel-headers-$RUNNING_KERNEL")
     fi
     print_info "Layering: ${packages_to_install[*]}"
@@ -199,7 +223,7 @@ install_debian_dependencies() {
         build-essential \
         make \
         gcc \
-        linux-headers-$(uname -r) \
+        "linux-headers-$(uname -r)" \
         cmake \
         qt6-base-dev \
         qt6-charts-dev \
@@ -207,6 +231,9 @@ install_debian_dependencies() {
         libusb-1.0-0-dev \
         libhidapi-dev \
         pkg-config
+    if [ "$USE_DKMS" = "1" ]; then
+        sudo apt install -y dkms
+    fi
     
     print_success "Dependencies installed"
 }
@@ -298,6 +325,9 @@ install_arch_dependencies() {
         libusb \
         hidapi \
         pkgconf
+    if [ "$USE_DKMS" = "1" ]; then
+        sudo pacman -S --needed --noconfirm dkms
+    fi
     
     print_success "Dependencies installed"
 }
@@ -319,6 +349,9 @@ install_cachyos_dependencies() {
         libusb \
         hidapi \
         pkgconf
+    if [ "$USE_DKMS" = "1" ]; then
+        sudo pacman -S --needed --noconfirm dkms
+    fi
 
     print_success "Dependencies installed (including LLVM/clang toolchain)"
 }
@@ -453,6 +486,26 @@ install_kernel_driver() {
                 exit 1
             fi
         fi
+    elif [ "$USE_DKMS" = "1" ]; then
+        # DKMS: register source so the module is rebuilt on every kernel update
+        if ! command -v dkms &> /dev/null; then
+            print_error "dkms command not found. Install the 'dkms' package or choose the manual install."
+            exit 1
+        fi
+        print_info "Registering kernel module with DKMS..."
+        if ! make $MAKE_ARGS dkms-install; then
+            print_error "DKMS build/install failed!"
+            dkms_ver=$(sed -n 's/^PACKAGE_VERSION="\(.*\)"/\1/p' dkms.conf)
+            print_info "Check the DKMS log: /var/lib/dkms/lian-li-sl-infinity/${dkms_ver:-1.0}/build/make.log"
+            exit 1
+        fi
+        print_info "Loading kernel module..."
+        sudo rmmod Lian_Li_SL_INFINITY 2>/dev/null || true
+        if ! sudo modprobe Lian_Li_SL_INFINITY 2>/dev/null; then
+            print_error "Failed to load kernel module!"
+            print_info "Check dmesg for errors: sudo dmesg | tail -20"
+            exit 1
+        fi
     else
         # Standard: install using the Makefile (which handles depmod)
         print_info "Installing kernel module to system..."
@@ -559,7 +612,7 @@ install_application() {
     
     # Build
     print_info "Building application..."
-    if ! make -j$(nproc); then
+    if ! make -j"$(nproc)"; then
         print_error "Application build failed!"
         exit 1
     fi
@@ -632,6 +685,7 @@ verify_installation() {
 main() {
     # Show menu and get user selection
     show_menu
+    select_driver_install_method
     
     check_sudo
     
@@ -677,6 +731,10 @@ main() {
         echo "    sudo cp Lian_Li_SL_INFINITY.ko /usr/local/lib/modules/\$(uname -r)/extra/"
         echo "    sudo depmod -a && sudo modprobe -r Lian_Li_SL_INFINITY && sudo modprobe Lian_Li_SL_INFINITY"
         echo "  - Kernel module is in /usr/local/lib/modules/ (writable)"
+        echo ""
+    elif [ "$USE_DKMS" = "1" ]; then
+        print_info "Kernel driver is managed by DKMS - it is rebuilt automatically on kernel updates."
+        echo "  - Check status any time with: dkms status | grep lian-li"
         echo ""
     elif [[ "$DISTRO_TYPE" == "cachyos" ]]; then
         print_warning "CachyOS / clang kernel notes:"

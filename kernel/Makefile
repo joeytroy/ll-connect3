@@ -1,6 +1,6 @@
 obj-m := Lian_Li_SL_INFINITY.o
 
-KERNEL_VERSION := $(shell uname -r)
+KERNEL_VERSION ?= $(shell uname -r)
 KERNEL_DIR := /lib/modules/$(KERNEL_VERSION)/build
 MODULE_DIR := /lib/modules/$(KERNEL_VERSION)/extra
 
@@ -30,10 +30,40 @@ uninstall:
 	sudo depmod -a
 	@echo "SL-Infinity driver removed"
 
+# --- DKMS (recommended): module is rebuilt automatically on every kernel update ---
+DKMS_NAME    := lian-li-sl-infinity
+DKMS_VERSION := $(shell sed -n 's/^PACKAGE_VERSION="\(.*\)"/\1/p' dkms.conf)
+DKMS_SRC     := /usr/src/$(DKMS_NAME)-$(DKMS_VERSION)
+
+dkms-install:
+	sudo rm -rf $(DKMS_SRC)
+	sudo mkdir -p $(DKMS_SRC)
+	sudo cp Lian_Li_SL_INFINITY.c Makefile dkms.conf $(DKMS_SRC)/
+ifdef USE_LLVM
+	sudo sed -i 's/^MAKE\[0\]="make /MAKE[0]="make USE_LLVM=1 /; s/^CLEAN="make /CLEAN="make USE_LLVM=1 /' $(DKMS_SRC)/dkms.conf
+endif
+	@# Only register if not already known to DKMS; surface any real 'dkms add' error
+	if ! dkms status -m $(DKMS_NAME) -v $(DKMS_VERSION) 2>/dev/null | grep -q .; then \
+		sudo dkms add -m $(DKMS_NAME) -v $(DKMS_VERSION); \
+	fi
+	sudo dkms build -m $(DKMS_NAME) -v $(DKMS_VERSION) --force
+	sudo dkms install -m $(DKMS_NAME) -v $(DKMS_VERSION) --force
+	sudo depmod -a
+	@echo "SL-Infinity driver registered with DKMS; it will be rebuilt on kernel updates."
+
+dkms-uninstall:
+	@# Remove every registered version (not just the one in dkms.conf) so a
+	@# bumped PACKAGE_VERSION never leaves stale registrations behind
+	for ver in $$( { dkms status 2>/dev/null | sed -nE 's#^$(DKMS_NAME)[/,] *([^,/ ]+).*#\1#p'; echo $(DKMS_VERSION); } | sort -u ); do \
+		sudo dkms remove -m $(DKMS_NAME) -v $$ver --all || true; \
+		sudo rm -rf /usr/src/$(DKMS_NAME)-$$ver; \
+	done
+	sudo depmod -a
+
 reload:
 	sudo rmmod Lian_Li_SL_INFINITY 2>/dev/null || true
 	sudo insmod Lian_Li_SL_INFINITY.ko
 	@echo "Module reloaded. Check detection with:"
 	@echo "  sudo dmesg | grep -i sli | tail -20"
 
-.PHONY: all clean install uninstall reload
+.PHONY: all clean install uninstall reload dkms-install dkms-uninstall
