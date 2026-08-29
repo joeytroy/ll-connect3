@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [1.4.0] - 2026-08-29 — DKMS kernel driver & CI
+
+### Added
+- **DKMS support for the kernel driver**: New `kernel/dkms.conf` plus `make dkms-install` / `make dkms-uninstall` targets register `Lian_Li_SL_INFINITY` with DKMS so it is rebuilt automatically on every kernel update — no more re-running the installer after each kernel upgrade. `USE_LLVM=1` is forwarded into `dkms.conf` for clang-built kernels (CachyOS). On distros that ship a DKMS MOK key (e.g. Ubuntu `shim-signed`) the module is signed automatically and loads with Secure Boot enabled.
+- **Installer driver method prompt**: `install.sh` now asks how to install the kernel driver after the distro menu — **DKMS (recommended, default)** or **Manual (current kernel only)**. The `dkms` package is only installed when chosen; post-install notes adapt accordingly. Bazzite always uses the manual path (`/lib/modules` is read-only).
+- **CI workflows**: GitHub Actions now build the kernel module (including a full DKMS add/build/install/remove cycle) and the Qt app on every PR, and run ShellCheck, a Unicode/hidden-character scan, and zizmor (workflow audit). A Claude Code review bot posts a read-only review on each PR.
+
+### Changed
+- **Uninstaller**: `uninstall.sh` deregisters the module from DKMS (every registered version, discovered via `dkms status`) before the existing manual removal.
+- **Kernel Makefile**: `KERNEL_VERSION` is now overridable (`?=`) so DKMS can build for kernels other than the running one; `dkms build` uses `--force` so re-running the installer is idempotent, and `dkms add` errors are no longer silenced.
+- **Docs**: README and `kernel/INSTALL.md` document DKMS as the recommended install path and the Secure Boot implications.
+- **Version**: Bumped to 1.4.0.
+
+---
+
 ## [1.3.0] - 2026-05-22 — Import/Export settings & fan curve point editing
 
 ### Added

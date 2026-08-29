@@ -2,7 +2,7 @@
 
 Complete Linux support for the Lian Li SL‑Infinity hub: a kernel fan driver and a Qt desktop app that mirrors Windows L‑Connect 3.
 
-#### [1.3.0] - 2026-05-22 — Import/Export settings & fan curve point editing [CHANGELOG Information](CHANGELOG.md)
+#### [1.4.0] - 2026-08-29 — DKMS kernel driver & CI [CHANGELOG Information](CHANGELOG.md)
 
 ## Support This Project
 
@@ -89,7 +89,7 @@ cd ll-connect3
 ./uninstall.sh
 ```
 
-The uninstall script removes the app, the kernel module, its auto‑load config, and build artifacts.
+The uninstall script removes the app, the kernel module (deregistering it from DKMS if it was installed that way), its auto‑load config, and build artifacts.
 
 ## Application Overview
 
@@ -275,11 +275,10 @@ If you see an error like "Kernel build directory not found", it means your kerne
 ### Bazzite OS / Immutable Systems
 
 **Using the correct installer:**
-- Use `./install-bazzite.sh` for Bazzite OS and other rpm-ostree-based systems
-- The regular `./install.sh` will detect immutable systems and prompt you to use the Bazzite installer
+- Run `./install.sh` and choose option **4** (Bazzite OS). DKMS is not available on immutable systems (`/lib/modules` is read-only), so the driver is always installed manually to `/usr/local/lib/modules/`.
 
 **After system updates:**
-- When Bazzite updates the kernel via rpm-ostree, you'll need to rebuild the kernel module:
+- When Bazzite updates the kernel via rpm-ostree, you'll need to rebuild the kernel module (DKMS cannot do this for you on Bazzite):
   ```bash
   cd ll-connect3/kernel
   make clean
