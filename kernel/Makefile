@@ -42,8 +42,11 @@ dkms-install:
 ifdef USE_LLVM
 	sudo sed -i 's/^MAKE\[0\]="make /MAKE[0]="make USE_LLVM=1 /; s/^CLEAN="make /CLEAN="make USE_LLVM=1 /' $(DKMS_SRC)/dkms.conf
 endif
-	sudo dkms add -m $(DKMS_NAME) -v $(DKMS_VERSION) 2>/dev/null || true
-	sudo dkms build -m $(DKMS_NAME) -v $(DKMS_VERSION)
+	@# Only register if not already known to DKMS; surface any real 'dkms add' error
+	if ! dkms status -m $(DKMS_NAME) -v $(DKMS_VERSION) 2>/dev/null | grep -q .; then \
+		sudo dkms add -m $(DKMS_NAME) -v $(DKMS_VERSION); \
+	fi
+	sudo dkms build -m $(DKMS_NAME) -v $(DKMS_VERSION) --force
 	sudo dkms install -m $(DKMS_NAME) -v $(DKMS_VERSION) --force
 	sudo depmod -a
 	@echo "SL-Infinity driver registered with DKMS; it will be rebuilt on kernel updates."

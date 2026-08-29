@@ -495,7 +495,8 @@ install_kernel_driver() {
         print_info "Registering kernel module with DKMS..."
         if ! make $MAKE_ARGS dkms-install; then
             print_error "DKMS build/install failed!"
-            print_info "Check the DKMS log: /var/lib/dkms/lian-li-sl-infinity/1.0/build/make.log"
+            dkms_ver=$(sed -n 's/^PACKAGE_VERSION="\(.*\)"/\1/p' dkms.conf)
+            print_info "Check the DKMS log: /var/lib/dkms/lian-li-sl-infinity/${dkms_ver:-1.0}/build/make.log"
             exit 1
         fi
         print_info "Loading kernel module..."
